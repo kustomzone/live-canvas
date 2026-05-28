@@ -6,6 +6,7 @@ export const SseEvents = Object.freeze({
   PLANNER_DONE: 'planner_done',
   IMAGE_STARTED: 'image_started',
   IMAGE_READY: 'image_ready',
+  OCR_DONE: 'ocr_done',
   NODE_READY: 'node_ready',
   TREE_UPDATED: 'tree_updated',
   ERROR: 'error',

@@ -91,7 +91,8 @@
      usual case. */
   object-fit: contain;
   display: block;
-  user-select: none;
+  /* user-select stays default so the TextLayer overlay above can be
+     selected. The image itself can't be dragged or selected as an image. */
   -webkit-user-drag: none;
 }
 

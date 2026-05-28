@@ -23,4 +23,11 @@ export const config = {
   imageProvider: process.env.IMAGE_PROVIDER || 'codebuddy',
   // For Phase 1/2 we run with stubs; Phase 3+ flips this on
   enableCodebuddy: process.env.ENABLE_CODEBUDDY === '1',
+  // Apple Vision OCR pass after each image is generated. On by default
+  // (it's free, fast, and only runs if a real PNG was produced). Set
+  // ENABLE_OCR=0 to opt out.
+  enableOcr: process.env.ENABLE_OCR !== '0',
+  ocrTimeoutMs: Number(process.env.OCR_TIMEOUT_MS || 25_000),
+  ocrMinConfidence: Number(process.env.OCR_MIN_CONFIDENCE || 0.4),
+  ocrMaxSpans: Number(process.env.OCR_MAX_SPANS || 200),
 };

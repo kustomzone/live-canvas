@@ -115,6 +115,26 @@ export async function hydrateFromDisk() {
           );
         }
       }
+
+      // Text spans (OCR'd in-image text overlays)
+      if (Array.isArray(nodeJson?.text_layer) && nodeJson.text_layer.length > 0) {
+        const { TextSpan } = models();
+        const existingCount = await TextSpan.count({ where: { canvasId: id, nodeHash: hash } });
+        if (existingCount === 0) {
+          await TextSpan.bulkCreate(
+            nodeJson.text_layer.slice(0, 500).map((s, i) => ({
+              canvasId: id, nodeHash: hash, position: i,
+              text: String(s.text ?? '').slice(0, 240),
+              x: Number(s.bbox?.[0] ?? 0),
+              y: Number(s.bbox?.[1] ?? 0),
+              w: Number(s.bbox?.[2] ?? 0),
+              h: Number(s.bbox?.[3] ?? 0),
+              confidence: typeof s.confidence === 'number' ? s.confidence : null,
+              createdAt: new Date(nodeJson?.generated_at ?? Date.now()),
+            })),
+          );
+        }
+      }
     }
   }
   log.info(`[db] hydrated ${cCount} canvases, ${nCount} nodes, ${hCount} hotspots from disk`);

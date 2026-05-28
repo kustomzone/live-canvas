@@ -117,7 +117,29 @@ export function defineModels(s = getSequelize()) {
     ],
   });
 
-  return { Canvas, Node, Hotspot, ShareLink, Source };
+  // OCR'd text spans for each generated image. One row per recognised line.
+  // bbox is normalized 0..1 with origin at top-left.
+  const TextSpan = s.define('TextSpan', {
+    id:         { type: DataTypes.INTEGER, autoIncrement: true, primaryKey: true },
+    canvasId:   { type: DataTypes.STRING(64), allowNull: false },
+    nodeHash:   { type: DataTypes.STRING(12), allowNull: false },
+    position:   { type: DataTypes.INTEGER, allowNull: false }, // ordering within a node
+    text:       { type: DataTypes.TEXT, allowNull: false },
+    x:          { type: DataTypes.FLOAT, allowNull: false },
+    y:          { type: DataTypes.FLOAT, allowNull: false },
+    w:          { type: DataTypes.FLOAT, allowNull: false },
+    h:          { type: DataTypes.FLOAT, allowNull: false },
+    confidence: { type: DataTypes.FLOAT, allowNull: true },
+    createdAt:  { type: DataTypes.DATE, allowNull: false },
+  }, {
+    tableName: 'text_spans',
+    timestamps: false,
+    indexes: [
+      { fields: ['canvasId', 'nodeHash'] },
+    ],
+  });
+
+  return { Canvas, Node, Hotspot, ShareLink, Source, TextSpan };
 }
 
 let cachedModels = null;

@@ -170,3 +170,37 @@ export async function listSourcesForNode(canvasId, nodeHash) {
     source: r.source,
   }));
 }
+
+// --- TextSpans (OCR'd in-image text overlays) ---
+
+export async function recordTextSpans(canvasId, nodeHash, spans) {
+  const { TextSpan } = models();
+  if (!Array.isArray(spans)) return;
+  // Idempotent: clear and rewrite (allows re-OCR'ing in the future).
+  await TextSpan.destroy({ where: { canvasId, nodeHash } });
+  if (spans.length === 0) return;
+  const rows = spans.slice(0, 500).map((s, i) => ({
+    canvasId, nodeHash, position: i,
+    text: String(s.text ?? '').slice(0, 240),
+    x: Number(s.bbox?.[0] ?? 0),
+    y: Number(s.bbox?.[1] ?? 0),
+    w: Number(s.bbox?.[2] ?? 0),
+    h: Number(s.bbox?.[3] ?? 0),
+    confidence: typeof s.confidence === 'number' ? s.confidence : null,
+    createdAt: new Date(),
+  }));
+  await TextSpan.bulkCreate(rows);
+}
+
+export async function listTextSpansForNode(canvasId, nodeHash) {
+  const { TextSpan } = models();
+  const rows = await TextSpan.findAll({
+    where: { canvasId, nodeHash },
+    order: [['position', 'ASC']],
+  });
+  return rows.map((r) => ({
+    text: r.text,
+    bbox: [r.x, r.y, r.w, r.h],
+    confidence: r.confidence ?? undefined,
+  }));
+}

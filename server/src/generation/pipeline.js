@@ -11,6 +11,7 @@ import { hashNode } from '../lib/hash.js';
 import {
   nodeExists, readNode, registerNode, writeNode, countNodes,
 } from '../store/nodeStore.js';
+import { paths } from '../store/paths.js';
 import { broadcast } from '../sse/hub.js';
 import { SseEvents } from '../sse/events.js';
 import { callPlanner } from './planner.js';
@@ -19,10 +20,11 @@ import { generateImage } from './image.js';
 import { stubPlannerOutput, stubClickLabel } from './stubPlanner.js';
 import { callDecideSearch, stubDecideSearch } from './decideSearch.js';
 import { searchWeb } from './searchWeb.js';
+import { runOcr } from './ocr.js';
 import { touchLastRun } from '../store/canvasStore.js';
 import {
   recordNode, recordHotspot, bumpNodeCount, setCoverIfMissing,
-  findNearbyHotspot, recordSources,
+  findNearbyHotspot, recordSources, recordTextSpans,
 } from '../db/repo.js';
 import { PerKeySemaphore } from './queue.js';
 import { log } from '../lib/log.js';
@@ -206,7 +208,33 @@ async function buildAndRegisterNode({
     imageUrl, fallback: imageOutcome.fallback === true,
   });
 
-  const node = { ...skeleton, image: imageRel, generated_at: new Date().toISOString() };
+  // OCR pass — only for real PNGs (skip the SVG placeholder fallback). Failure
+  // is non-fatal: we just don't get a selectable text overlay for this node.
+  let textLayer = [];
+  let imageW;
+  let imageH;
+  if (imageOutcome.ext === 'png' && !imageOutcome.fallback) {
+    const ocr = await runOcr({ imagePath: paths.imagePath(canvas.id, hash, 'png') });
+    if (ocr.ok) {
+      textLayer = ocr.spans;
+      imageW = ocr.imageW;
+      imageH = ocr.imageH;
+    } else if (ocr.reason && ocr.reason !== 'ocr disabled') {
+      log.warn(`[ocr] ${canvas.id}/${hash}: ${ocr.reason}`);
+    }
+    broadcast(canvas, {
+      type: SseEvents.OCR_DONE, canvasId: canvas.id, jobId, hash,
+      spanCount: textLayer.length,
+    });
+  }
+
+  const node = {
+    ...skeleton,
+    image: imageRel,
+    generated_at: new Date().toISOString(),
+    text_layer: textLayer,
+    ...(imageW && imageH ? { image_w: imageW, image_h: imageH } : {}),
+  };
   await registerNode(canvas.id, node);
   await touchLastRun(canvas.id);
 
@@ -219,6 +247,7 @@ async function buildAndRegisterNode({
     await bumpNodeCount(canvas.id);
     if (!parentNode) await setCoverIfMissing(canvas.id, hash, imageUrl);
     if (sources.length) await recordSources(canvas.id, hash, sources);
+    if (textLayer.length) await recordTextSpans(canvas.id, hash, textLayer);
   } catch (e) { log.warn('db recordNode:', e?.message); }
 
   broadcast(canvas, { type: SseEvents.NODE_READY, canvasId: canvas.id, jobId, hash, node });

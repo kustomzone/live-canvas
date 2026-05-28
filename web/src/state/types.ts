@@ -14,6 +14,14 @@ export type SourceRef = {
   source?: string | null; // hostname / publisher
 };
 
+// One OCR'd text run baked into the generated image. bbox is normalized
+// 0..1 with origin at the image's TOP-LEFT.
+export type TextSpan = {
+  text: string;
+  bbox: [number, number, number, number];
+  confidence?: number;
+};
+
 export type Node = {
   hash: string;
   depth: number;
@@ -24,6 +32,9 @@ export type Node = {
   image_prompt: string;
   hotspots: Hotspot[];
   sources?: SourceRef[];
+  text_layer?: TextSpan[];
+  image_w?: number;
+  image_h?: number;
   path: { hash: string; title: string }[];
   generated_at: string;
   style_tag: string;
@@ -44,6 +55,7 @@ export type SseEvent =
   | { type: 'planner_done'; canvasId: string; jobId: string; hash: string; node: Omit<Node, 'image' | 'generated_at'> }
   | { type: 'image_started'; canvasId: string; jobId: string; hash: string }
   | { type: 'image_ready'; canvasId: string; jobId: string; hash: string; imageUrl: string; fallback: boolean }
+  | { type: 'ocr_done'; canvasId: string; jobId: string; hash: string; spanCount: number }
   | { type: 'node_ready'; canvasId: string; jobId: string; hash: string; node: Node }
   | { type: 'tree_updated'; canvasId: string; jobId: string; treeNodeCount: number }
   | { type: 'error'; canvasId: string; jobId: string; phase: 'plan' | 'image' | 'register'; message: string; recoverable: boolean }

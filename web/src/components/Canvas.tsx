@@ -4,6 +4,7 @@ import type { Node, PendingClick } from '../state/types';
 import { HotspotCard } from './HotspotCard';
 import { SourcesBadge } from './SourcesBadge';
 import { LongPressIndicator } from './LongPressIndicator';
+import { TextLayer } from './TextLayer';
 import { imageUrl } from '../lib/api';
 import { clamp01, pct } from '../lib/geometry';
 import { layOutHotspots } from '../lib/layout';
@@ -68,6 +69,11 @@ export function Canvas({ canvasId, node, imageLoading, pendingClicks, readOnly, 
     if (!interactive || !node) return;
     // Ignore non-primary buttons (right click etc.)
     if (e.button !== undefined && e.button !== 0) return;
+    // If the pointerdown landed on a TextLayer span, the user is selecting
+    // text — don't start a long-press timer. (`closest` walks up the DOM so
+    // it works even if the target is a child node of the span.)
+    const target = e.target as HTMLElement | null;
+    if (target?.closest?.('[data-textspan="1"]')) return;
     const stage = e.currentTarget.getBoundingClientRect();
     const xRel = (e.clientX - stage.left) / stage.width;
     const yRel = (e.clientY - stage.top) / stage.height;
@@ -153,6 +159,59 @@ export function Canvas({ canvasId, node, imageLoading, pendingClicks, readOnly, 
     return [cx + dx * t, cy + dy * t] as const;
   }
 
+  // --- TextLayer geometry: figure out the actually-rendered image rect
+  // inside the stage (object-fit: contain letterboxes when image aspect ≠
+  // stage aspect) and pass it + the stage height in px to TextLayer so the
+  // overlay aligns with the painted pixels even on resize.
+  const imgRef = useRef<HTMLImageElement | null>(null);
+  const [imageRect, setImageRect] = useState<{ left: number; top: number; width: number; height: number } | null>(null);
+  const [stageHeightPx, setStageHeightPx] = useState(0);
+
+  useLayoutEffect(() => {
+    if (!stageRef.current || !node?.text_layer?.length || isSvg) {
+      if (imageRect !== null) setImageRect(null);
+      return;
+    }
+    const measure = () => {
+      const stageRect = stageRef.current?.getBoundingClientRect();
+      if (!stageRect || stageRect.width === 0 || stageRect.height === 0) return;
+      setStageHeightPx(stageRect.height);
+      // We know the image's pixel dims (server-supplied). Compute the
+      // contained rect: scale uniformly to fit stage, centre.
+      const iw = node?.image_w;
+      const ih = node?.image_h;
+      if (!iw || !ih) {
+        // Without server-supplied dims, assume the image fills the stage 1:1.
+        setImageRect({ left: 0, top: 0, width: 100, height: 100 });
+        return;
+      }
+      const stageAspect = stageRect.width / stageRect.height;
+      const imgAspect = iw / ih;
+      let renderedWPct = 100;
+      let renderedHPct = 100;
+      let leftPct = 0;
+      let topPct = 0;
+      if (imgAspect > stageAspect) {
+        // image is wider than stage → fills width, letterbox top/bottom
+        renderedWPct = 100;
+        renderedHPct = (stageAspect / imgAspect) * 100;
+        leftPct = 0;
+        topPct = (100 - renderedHPct) / 2;
+      } else if (imgAspect < stageAspect) {
+        // image is taller than stage → fills height, pillarbox left/right
+        renderedHPct = 100;
+        renderedWPct = (imgAspect / stageAspect) * 100;
+        topPct = 0;
+        leftPct = (100 - renderedWPct) / 2;
+      }
+      setImageRect({ left: leftPct, top: topPct, width: renderedWPct, height: renderedHPct });
+    };
+    measure();
+    window.addEventListener('resize', measure);
+    return () => window.removeEventListener('resize', measure);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [node?.hash, node?.image_w, node?.image_h, node?.text_layer?.length, isSvg]);
+
   let stageClass = styles.stage;
   if (readOnly) stageClass += ` ${styles.stageReadOnly}`;
   else if (atCapacity) stageClass += ` ${styles.stageBusy}`;
@@ -194,7 +253,7 @@ export function Canvas({ canvasId, node, imageLoading, pendingClicks, readOnly, 
         {hasImage && (
           isSvg
             ? <object className={styles.imageSvg} data={src} type="image/svg+xml" aria-label={node?.title ?? ''} />
-            : <img className={styles.image} src={src} alt={node?.title ?? ''} draggable={false} />
+            : <img ref={imgRef} className={styles.image} src={src} alt={node?.title ?? ''} draggable={false} />
         )}
         {(imageLoading || !hasImage) && <div className={styles.shimmer} aria-hidden />}
 
@@ -222,6 +281,15 @@ export function Canvas({ canvasId, node, imageLoading, pendingClicks, readOnly, 
               );
             })}
           </svg>
+        )}
+
+        {/* Selectable text overlay (OCR'd in-image annotations) */}
+        {node && !isSvg && node.text_layer && node.text_layer.length > 0 && (
+          <TextLayer
+            spans={node.text_layer}
+            rect={imageRect}
+            stageHeightPx={stageHeightPx}
+          />
         )}
 
         {/* Hotspot cards */}

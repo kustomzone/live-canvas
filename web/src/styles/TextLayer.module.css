@@ -1,0 +1,53 @@
+/* TextLayer — invisible HTML overlay so users can drag-select and copy text
+   that's painted into the generated image. The painted pixels remain the
+   ground truth; these spans just live on top of them. */
+
+.layer {
+  position: absolute;
+  inset: 0;
+  /* Wrapper is transparent to pointers so empty image regions still receive
+     the stage's long-press handler. Individual spans opt back in. */
+  pointer-events: none;
+  /* Above the leader-line SVG (z-index ~1) but below the hotspot cards (which
+     create their own stacking context via .hotspots). */
+  z-index: 2;
+}
+
+.span {
+  position: absolute;
+  /* Painted pixels remain visible; this layer only carries selectable text. */
+  color: transparent;
+  background: transparent;
+  /* CJK + Latin friendly stack with visible-width hint for selection UX. */
+  font-family: -apple-system, "PingFang SC", "Hiragino Sans GB",
+               "Helvetica Neue", "Helvetica", sans-serif;
+  /* The invisible run is single-line — scrollWidth measures the natural
+     glyph run width which we then scaleX into the bbox. */
+  white-space: nowrap;
+  /* Don't clip: even if the natural run is wider than the bbox we want
+     scrollWidth to reflect it; transform: scaleX shrinks it to fit. */
+  overflow: visible;
+  line-height: 1;
+  /* Required so the user can actually select. */
+  user-select: text;
+  -webkit-user-select: text;
+  /* Inherit text-cursor instead of the stage's crosshair / wait. */
+  cursor: text;
+  pointer-events: auto;
+  margin: 0;
+  padding: 0;
+  /* Keep the box itself invisible (no outline, no background) — debug with
+     `outline: 1px solid red` if alignment needs inspection. */
+}
+
+/* While the span is being selected, keep the glyphs transparent (otherwise
+   the browser falls back to the default text color and we'd see mismatched
+   ghost text on top of the painted pixels). Only the highlight tint shows. */
+.span::selection {
+  background: rgba(217, 99, 28, 0.22); /* matches --accent at 22% */
+  color: transparent;
+}
+.span::-moz-selection {
+  background: rgba(217, 99, 28, 0.22);
+  color: transparent;
+}

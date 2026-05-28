@@ -64,6 +64,10 @@ If you're evaluating CodeBuddy as a backend dependency for an interactive produc
   trigger new ones.
 - **Fullscreen casting**: ⛶ requests browser fullscreen; toggle the chrome
   (breadcrumb + caption + hint) on/off for a clean projection view.
+- **Selectable in-image text**: every label baked into the diagram is OCR'd
+  with Apple Vision (`zh-Hans` + `en-US`) and overlaid as invisible HTML, so
+  users can drag-select and Cmd-C copy any text directly off the picture
+  while the painted pixels remain the visual ground truth.
 - **Mobile responsive**: top bar collapses to icons, single-column gallery,
   smaller hotspots and pending bubbles.
 
@@ -246,6 +250,9 @@ npm start             # serves web/dist + API from :8787
 | `IMAGE_SIZE` | `1920x1080` | requested size (provider may pick its own) |
 | `ENABLE_CODEBUDDY` | 0 | flip to 1 to enable real generation |
 | `ENABLE_WEB_SEARCH` | follows `ENABLE_CODEBUDDY` | force-disable with `0` |
+| `ENABLE_OCR` | 1 | run Apple Vision OCR on each generated PNG to produce a selectable text overlay; set to `0` to skip |
+| `OCR_TIMEOUT_MS` | 25000 | per-call OCR timeout |
+| `OCR_MIN_CONFIDENCE` | 0.4 | drop OCR spans below this confidence |
 
 ## Disk format compatibility
 
