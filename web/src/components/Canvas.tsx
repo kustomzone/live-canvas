@@ -388,10 +388,23 @@ export function Canvas({ canvasId, node, tree, imageLoading, pendingClicks, read
           </div>
         )}
 
-        {/* Read-only badge */}
+        {/* Read-only badge — anchored to the actual painted image's top-right
+            corner (not the stage's), so in fullscreen / pillar-boxed layouts
+            it stays glued to the picture instead of floating in the empty
+            letterbox strip. Falls back to stage corner pre-measure. */}
         {readOnly && (
-          <div className={styles.readOnlyBadge}>
-            <Icon name="eye" size={12} /> {t('canvas.preview.badge', lang)}
+          <div
+            className={styles.readOnlyBadge}
+            style={imageRect ? {
+              top: `${imageRect.top}%`,
+              right: `${100 - (imageRect.left + imageRect.width)}%`,
+              left: 'auto',
+              transform: 'translate(-12px, 12px)',
+            } : undefined}
+            title={t('canvas.preview.badge', lang)}
+            aria-label={t('canvas.preview.badge', lang)}
+          >
+            <Icon name="eye" size={14} />
           </div>
         )}
       </div>

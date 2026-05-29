@@ -207,11 +207,19 @@
   gap: 6px;
 }
 
-.readOnlyBadge svg { display: block; }
-
 .readOnlyBadge {
-  background: rgba(0, 102, 204, 0.9);
+  background: rgba(0, 102, 204, 0.92);
+  /* Compact icon-only chip — 28×28 circle, no surrounding text. Used as a
+     visual marker that the canvas is in read-only / preview mode. Inline
+     style sets `top` / `right` to track the painted-image rect (see Canvas
+     .tsx); the static defaults here are the stage-corner fallback. */
+  width: 28px;
+  height: 28px;
+  padding: 0;
+  justify-content: center;
 }
+
+.readOnlyBadge svg { display: block; }
 
 /* Mobile-friendly tweaks */
 @media (max-width: 720px) {
