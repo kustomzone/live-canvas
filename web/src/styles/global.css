@@ -26,3 +26,23 @@ body {
 button {
   font: inherit;
 }
+
+/* Native fullscreen: most browsers paint the letterbox area with the
+   fullscreened element's computed background, which used to fall back to
+   black. Force every level of the document tree to the canvas beige so
+   the painted image's background blends seamlessly with the chrome. */
+:root:fullscreen,
+html:fullscreen,
+body:fullscreen,
+#root:fullscreen,
+:fullscreen {
+  background: var(--bg) !important;
+}
+
+:root::backdrop,
+html::backdrop,
+body::backdrop,
+#root::backdrop,
+*::backdrop {
+  background: var(--bg);
+}

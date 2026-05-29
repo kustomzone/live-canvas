@@ -1,101 +1,179 @@
-import { useEffect, useState } from 'react';
+import { useCallback, useEffect, useRef, useState } from 'react';
 import styles from '../styles/Gallery.module.css';
 import type { GalleryEntry } from '../state/types';
-import { listCanvases } from '../lib/api';
+import { listCanvasesPage } from '../lib/api';
+import { useLang, t, format } from '../lib/i18n';
+import type { Lang } from '../lib/i18n';
 
 type Props = {
   onOpen: (canvasId: string) => void;
   refreshKey?: number;
 };
 
-function formatRelativeTime(iso: string | null): string {
+const PAGE_SIZE = 24;
+
+function formatRelativeTime(iso: string | null, lang: Lang): string {
   if (!iso) return '';
-  const t = new Date(iso).getTime();
-  if (!Number.isFinite(t)) return '';
-  const dt = (Date.now() - t) / 1000;
-  if (dt < 60) return 'just now / 刚刚';
-  if (dt < 3600) return `${Math.floor(dt / 60)}m ago`;
-  if (dt < 86400) return `${Math.floor(dt / 3600)}h ago`;
-  return `${Math.floor(dt / 86400)}d ago`;
+  const ts = new Date(iso).getTime();
+  if (!Number.isFinite(ts)) return '';
+  const dt = (Date.now() - ts) / 1000;
+  if (dt < 60) return t('time.justNow', lang);
+  if (dt < 3600) return format(t('time.minutesAgo', lang), { n: Math.floor(dt / 60) });
+  if (dt < 86400) return format(t('time.hoursAgo', lang), { n: Math.floor(dt / 3600) });
+  return format(t('time.daysAgo', lang), { n: Math.floor(dt / 86400) });
 }
 
 export function Gallery({ onOpen, refreshKey }: Props) {
   const [entries, setEntries] = useState<GalleryEntry[]>([]);
+  const [total, setTotal] = useState(0);
+  const [hasMore, setHasMore] = useState(true);
   const [loading, setLoading] = useState(true);
+  const [loadingMore, setLoadingMore] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const [lang] = useLang();
 
+  // Sentinel ref — IntersectionObserver triggers loadMore when this scrolls
+  // into view. Re-bound on every render via the callback ref pattern so it
+  // works after the entries list grows and React re-mounts the sentinel.
+  const observerRef = useRef<IntersectionObserver | null>(null);
+
+  // Reset + initial fetch whenever refreshKey changes (i.e. user navigated
+  // back to gallery, or just deleted/created a canvas). React 18 StrictMode
+  // mounts effects twice in dev — without an AbortController the second
+  // mount fires a duplicate /api/canvas request. Pass `signal` so the
+  // teardown actually cancels the first in-flight fetch (the "cancelled"
+  // flag alone only suppresses the state update, not the network call).
   useEffect(() => {
-    let cancelled = false;
+    const ctrl = new AbortController();
+    setEntries([]);
+    setTotal(0);
+    setHasMore(true);
+    setError(null);
     setLoading(true);
-    listCanvases()
-      .then((list) => {
-        if (cancelled) return;
-        setEntries(list);
-        setError(null);
+    listCanvasesPage(PAGE_SIZE, 0, ctrl.signal)
+      .then((page) => {
+        if (ctrl.signal.aborted) return;
+        setEntries(page.items);
+        setTotal(page.total);
+        setHasMore(page.hasMore);
       })
       .catch((e) => {
-        if (cancelled) return;
+        if (ctrl.signal.aborted) return;
+        // AbortError is normal on teardown — silently ignore.
+        if ((e as Error).name === 'AbortError') return;
         setError((e as Error).message);
       })
       .finally(() => {
-        if (!cancelled) setLoading(false);
+        if (!ctrl.signal.aborted) setLoading(false);
       });
-    return () => { cancelled = true; };
+    return () => { ctrl.abort(); };
   }, [refreshKey]);
+
+  const loadMore = useCallback(async () => {
+    if (loadingMore || loading || !hasMore) return;
+    setLoadingMore(true);
+    try {
+      const page = await listCanvasesPage(PAGE_SIZE, entries.length);
+      // Guard against duplicate IDs in case of race / overlapping fetches.
+      setEntries((prev) => {
+        const seen = new Set(prev.map((e) => e.canvasId));
+        const merged = [...prev];
+        for (const item of page.items) {
+          if (!seen.has(item.canvasId)) merged.push(item);
+        }
+        return merged;
+      });
+      setTotal(page.total);
+      setHasMore(page.hasMore);
+    } catch (e) {
+      setError((e as Error).message);
+    } finally {
+      setLoadingMore(false);
+    }
+  }, [entries.length, hasMore, loading, loadingMore]);
+
+  // Bind IO to the sentinel. We use a callback ref so the observer is
+  // attached/re-attached as the sentinel mounts (initial load) and remains
+  // attached across page bumps (the same DOM node persists).
+  const sentinelRef = useCallback((node: HTMLDivElement | null) => {
+    observerRef.current?.disconnect();
+    if (!node) return;
+    observerRef.current = new IntersectionObserver((entriesObs) => {
+      for (const entry of entriesObs) {
+        if (entry.isIntersecting) loadMore();
+      }
+    }, { rootMargin: '200px' });
+    observerRef.current.observe(node);
+  }, [loadMore]);
 
   if (loading) {
     return (
       <div className={styles.gallery}>
-        <div className={styles.empty}>Loading… 加载中…</div>
+        <div className={styles.empty}>{t('gallery.loading', lang)}</div>
       </div>
     );
   }
 
-  if (error) {
+  if (error && entries.length === 0) {
     return (
       <div className={styles.gallery}>
-        <div className={styles.empty}>Gallery error: {error}</div>
+        <div className={styles.empty}>{t('gallery.error', lang)}: {error}</div>
       </div>
     );
   }
+
+  const countKey = total === 1 ? 'gallery.count.one' : 'gallery.count.many';
 
   return (
     <div className={styles.gallery}>
       <div className={styles.header}>
-        <h2 className={styles.title}>Gallery · 市场</h2>
-        <span className={styles.count}>{entries.length} flipbook{entries.length === 1 ? '' : 's'}</span>
+        <h2 className={styles.title}>{t('gallery.title', lang)}</h2>
+        <span className={styles.count}>{format(t(countKey, lang), { n: total })}</span>
       </div>
 
       {entries.length === 0 ? (
         <div className={styles.empty}>
-          <p>No flipbooks yet. Type a topic above to start your first one.</p>
-          <p>暂无 flipbook,在顶部输入主题即可开始。</p>
+          <p>{t('gallery.empty.line1', lang)}</p>
+          <p>{t('gallery.empty.line2', lang)}</p>
         </div>
       ) : (
-        <div className={styles.grid}>
-          {entries.map((e) => (
-            <button
-              key={e.canvasId}
-              type="button"
-              className={styles.card}
-              onClick={() => onOpen(e.canvasId)}
-              title={e.topic}
-            >
-              {e.coverImage ? (
-                <img className={styles.cover} src={e.coverImage} alt={e.topic} draggable={false} />
-              ) : (
-                <div className={styles.coverPlaceholder}>generating… 生成中…</div>
-              )}
-              <div className={styles.body}>
-                <div className={styles.cardTitle}>{e.topic}</div>
-                <div className={styles.cardMeta}>
-                  <span>{e.nodeCount} node{e.nodeCount === 1 ? '' : 's'}</span>
-                  <span>{formatRelativeTime(e.last_run_at)}</span>
-                </div>
-              </div>
-            </button>
-          ))}
-        </div>
+        <>
+          <div className={styles.grid}>
+            {entries.map((e) => {
+              const nodeKey = e.nodeCount === 1 ? 'gallery.nodes.one' : 'gallery.nodes.many';
+              return (
+                <button
+                  key={e.canvasId}
+                  type="button"
+                  className={styles.card}
+                  onClick={() => onOpen(e.canvasId)}
+                  title={e.topic}
+                >
+                  {e.coverImage ? (
+                    <img className={styles.cover} src={e.coverImage} alt={e.topic} draggable={false} />
+                  ) : (
+                    <div className={styles.coverPlaceholder}>{t('gallery.cover.generating', lang)}</div>
+                  )}
+                  <div className={styles.body}>
+                    <div className={styles.cardTitle}>{e.topic}</div>
+                    <div className={styles.cardMeta}>
+                      <span>{format(t(nodeKey, lang), { n: e.nodeCount })}</span>
+                      <span>{formatRelativeTime(e.last_run_at, lang)}</span>
+                    </div>
+                  </div>
+                </button>
+              );
+            })}
+          </div>
+          {/* Infinite-scroll sentinel — IO fires loadMore when this scrolls
+              into view (with a 200px lead). When hasMore is false we stop
+              rendering the sentinel so the observer disconnects cleanly. */}
+          {hasMore && (
+            <div ref={sentinelRef} className={styles.sentinel}>
+              {loadingMore ? t('gallery.loading', lang) : ''}
+            </div>
+          )}
+        </>
       )}
     </div>
   );

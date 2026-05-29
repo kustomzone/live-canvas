@@ -1,6 +1,8 @@
 import { useEffect, useRef, useState } from 'react';
 import styles from '../styles/SourcesBadge.module.css';
 import type { SourceRef } from '../state/types';
+import { useLang, t } from '../lib/i18n';
+import { Icon } from './Icon';
 
 type Props = {
   sources: SourceRef[];
@@ -15,6 +17,7 @@ const CLOSE_DELAY_MS = 220; // grace period when the cursor leaves the badge / p
 export function SourcesBadge({ sources }: Props) {
   const [open, setOpen] = useState(false);
   const closeTimer = useRef<number | null>(null);
+  const [lang] = useLang();
 
   const cancelClose = () => {
     if (closeTimer.current !== null) {
@@ -52,20 +55,21 @@ export function SourcesBadge({ sources }: Props) {
         aria-haspopup="true"
         aria-expanded={open}
         onClick={() => setOpen((v) => !v)}
-        title={`${sources.length} reference link${sources.length === 1 ? '' : 's'}`}
+        title={`${t('sources.heading', lang)} (${sources.length})`}
       >
-        📚 {sources.length}
+        <Icon name="sources" size={12} />
+        <span>{sources.length}</span>
       </button>
       <div
         className={styles.popover}
         hidden={!open}
         role="dialog"
-        aria-label="Sources"
+        aria-label={t('sources.heading', lang)}
         onMouseEnter={cancelClose}
         onMouseLeave={scheduleClose}
       >
         <div className={styles.heading}>
-          References · 参考来源 ({sources.length})
+          {t('sources.heading', lang)} ({sources.length})
         </div>
         <div className={styles.list}>
           {sources.slice(0, 12).map((s, i) => (

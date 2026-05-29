@@ -53,6 +53,17 @@ export async function listCanvases(): Promise<GalleryEntry[]> {
   return res.json();
 }
 
+export async function listCanvasesPage(
+  limit: number,
+  offset: number,
+  signal?: AbortSignal,
+): Promise<{ items: GalleryEntry[]; total: number; hasMore: boolean }> {
+  const url = `${API}/canvas?limit=${limit}&offset=${offset}`;
+  const res = await fetch(url, signal ? { signal } : undefined);
+  if (!res.ok) throw new Error(`listCanvasesPage failed: ${res.status}`);
+  return res.json();
+}
+
 export async function getNode(canvasId: string, hash: string): Promise<Node> {
   const res = await fetch(`${API}/canvas/${canvasId}/nodes/${hash}`);
   if (!res.ok) throw new Error(`getNode failed: ${res.status}`);
@@ -69,4 +80,19 @@ export function imageUrl(canvasId: string, imageRel: string): string {
   if (imageRel.startsWith('/api/')) return imageRel;
   if (imageRel.startsWith('http')) return imageRel;
   return `${API}/canvas/${canvasId}/${imageRel.replace(/^\//, '')}`;
+}
+
+// Cascade-delete a node and all descendants.
+export async function deleteNode(
+  canvasId: string,
+  hash: string,
+): Promise<{ deletedHashes: string[]; parentHash: string | null }> {
+  const res = await fetch(`${API}/canvas/${canvasId}/nodes/${hash}`, {
+    method: 'DELETE',
+  });
+  if (!res.ok) {
+    const txt = await res.text();
+    throw new Error(`delete failed: ${res.status} ${txt}`);
+  }
+  return res.json();
 }

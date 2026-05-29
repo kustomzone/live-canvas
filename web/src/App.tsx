@@ -7,8 +7,10 @@ import { TopBar } from './components/TopBar';
 import { Canvas } from './components/Canvas';
 import { ToastStack } from './components/Toast';
 import { Gallery } from './components/Gallery';
+import { ConfirmModal } from './components/ConfirmModal';
 import { useCanvasSSE } from './hooks/useCanvasSSE';
-import { createCanvas, clickAt, getNode, getTree, createShareLink, resolveShareLink } from './lib/api';
+import { createCanvas, clickAt, getNode, getTree, createShareLink, resolveShareLink, deleteNode } from './lib/api';
+import { useLang, t } from './lib/i18n';
 
 function readUrlState() {
   const url = new URL(window.location.href);
@@ -41,6 +43,7 @@ export default function App() {
   const [state, dispatch] = useReducer(reducer, initialState);
   const [draftTopic, setDraftTopic] = useState('');
   const [galleryRefreshKey, setGalleryRefreshKey] = useState(0);
+  const [lang] = useLang();
   // True once boot URL has been parsed and any hydrate dispatched; before this
   // we MUST NOT write to the URL or we'll erase the params we're about to read.
   const bootedRef = useRef(false);
@@ -240,10 +243,16 @@ export default function App() {
         dispatch({ type: 'navigate', hash: nh });
       } else {
         getNode(state.canvasId, nh)
-          .then((child) => dispatch({
-            type: 'sse',
-            evt: { type: 'node_ready', canvasId: state.canvasId!, jobId: 'cache', hash: child.hash, node: child },
-          }))
+          .then((child) => {
+            dispatch({
+              type: 'sse',
+              evt: { type: 'node_ready', canvasId: state.canvasId!, jobId: 'cache', hash: child.hash, node: child },
+            });
+            // Same reason as onJumpBreadcrumb: node_ready only auto-navigates
+            // when child.parent === state.currentHash AND no other clicks
+            // are pending, so we explicitly navigate after register.
+            dispatch({ type: 'navigate', hash: child.hash });
+          })
           .catch((e) => dispatch({
             type: 'add_toast',
             toast: { level: 'warn', message: `Load failed: ${(e as Error).message}` },
@@ -252,12 +261,68 @@ export default function App() {
     }
   }, [state.canvasId, state.currentHash, state.nodes]);
 
+  // --- Delete confirmation modal state. We stage which hotspot the user
+  // wants to delete here; the modal reads it and on confirm calls the API.
+  const [deleteTarget, setDeleteTarget] = useState<{ hash: string; label: string; descendantCount: number } | null>(null);
+
+  const onHotspotDelete = useCallback((index: number) => {
+    if (state.readOnly) return;
+    if (!state.currentHash || !state.canvasId) return;
+    const node = state.nodes[state.currentHash];
+    const hot = node?.hotspots?.[index];
+    if (!hot?.next_hash) return;
+    const childHash = hot.next_hash;
+    // Count descendants under this hash from tree.nodes for the confirm
+    // body. Walk children iteratively.
+    let descendantCount = 1;
+    const treeNodes = state.tree?.nodes;
+    if (treeNodes) {
+      const seen = new Set<string>();
+      const queue: string[] = [childHash];
+      while (queue.length) {
+        const h = queue.shift()!;
+        if (seen.has(h)) continue;
+        seen.add(h);
+        const tn = treeNodes[h];
+        if (tn?.children) for (const c of tn.children) if (!seen.has(c)) queue.push(c);
+      }
+      descendantCount = seen.size;
+    }
+    setDeleteTarget({ hash: childHash, label: hot.label, descendantCount });
+  }, [state.canvasId, state.currentHash, state.nodes, state.readOnly, state.tree]);
+
+  const confirmDelete = useCallback(async () => {
+    if (!deleteTarget || !state.canvasId) {
+      setDeleteTarget(null);
+      return;
+    }
+    const { hash, label } = deleteTarget;
+    setDeleteTarget(null);
+    try {
+      await deleteNode(state.canvasId, hash);
+      // Server will broadcast node_deleted; the reducer prunes state. We
+      // also surface a toast for explicit user feedback.
+      dispatch({ type: 'add_toast', toast: { level: 'info', message: `Deleted: ${label} · 已删除` } });
+    } catch (e) {
+      dispatch({ type: 'add_toast', toast: { level: 'error', message: `Delete failed: ${(e as Error).message}` } });
+    }
+  }, [deleteTarget, state.canvasId]);
+
+  const cancelDelete = useCallback(() => setDeleteTarget(null), []);
+
   const onJumpBreadcrumb = useCallback((hash: string) => {
     if (state.nodes[hash]) {
       dispatch({ type: 'navigate', hash });
     } else if (state.canvasId) {
+      // Fetch first, then dispatch BOTH node_ready (to register the node in
+      // state.nodes) AND navigate (to switch to it). node_ready alone would
+      // only auto-navigate when node.parent === state.currentHash, which is
+      // false for cross-branch ancestor jumps from the catalog popover —
+      // without the explicit navigate, the first click silently no-ops and
+      // only the second click (now cache-hit) works.
       getNode(state.canvasId, hash).then((n) => {
         dispatch({ type: 'sse', evt: { type: 'node_ready', canvasId: state.canvasId!, jobId: 'jump', hash: n.hash, node: n } });
+        dispatch({ type: 'navigate', hash: n.hash });
       });
     }
   }, [state.canvasId, state.nodes]);
@@ -412,7 +477,7 @@ export default function App() {
 
           {state.view === 'canvas' && state.canvasId && !currentNode && (
             <div className={styles.empty}>
-              <p>{busy ? 'Generating canvas… 正在生成…' : 'Loading…'}</p>
+              <p>{busy ? t('canvas.loading', lang) : t('canvas.loading.short', lang)}</p>
             </div>
           )}
 
@@ -421,6 +486,7 @@ export default function App() {
               key={currentNode.hash}
               canvasId={state.canvasId!}
               node={currentNode}
+              tree={state.tree}
               imageLoading={imageLoadingForCurrent}
               pendingClicks={pendingForNode}
               readOnly={state.readOnly}
@@ -431,6 +497,8 @@ export default function App() {
               originXY={originXY}
               onImageClick={onImageClick}
               onHotspotClick={onHotspotClick}
+              onHotspotDelete={onHotspotDelete}
+              onJumpToHash={onJumpBreadcrumb}
             />
           )}
         </div>
@@ -439,6 +507,21 @@ export default function App() {
       <ToastStack
         toasts={state.toasts}
         onDismiss={(id) => dispatch({ type: 'remove_toast', id })}
+      />
+
+      <ConfirmModal
+        open={!!deleteTarget}
+        title={t('confirm.delete.title', lang)}
+        body={deleteTarget
+          ? lang === 'zh'
+            ? `这将永久删除「${deleteTarget.label}」及其下的 ${deleteTarget.descendantCount} 个画匹(含子孙画匹和图片),无法恢复。`
+            : `«${deleteTarget.label}» will be deleted along with ${deleteTarget.descendantCount} node${deleteTarget.descendantCount === 1 ? '' : 's'} (including its descendants and images). This cannot be undone.`
+          : ''}
+        confirmLabel={t('confirm.delete.confirm', lang)}
+        cancelLabel={t('confirm.delete.cancel', lang)}
+        destructive
+        onConfirm={confirmDelete}
+        onCancel={cancelDelete}
       />
     </div>
   );

@@ -8,6 +8,16 @@ function clamp01(n) { return Math.max(0, Math.min(1, Number(n) || 0)); }
 
 export function validateClickLabel(raw, { click_xy }) {
   if (!raw || typeof raw !== 'object') throw new PlannerError('label output not an object');
+  // Rejection branch: the LLM didn't see anything drillable under the click.
+  // Only treat as rejected if the model explicitly says so. A missing
+  // `confident` field defaults to confident (so unmodified shape-A outputs
+  // still work).
+  if (raw.confident === false) {
+    return {
+      rejected: true,
+      reason: String(raw.reason ?? '').slice(0, 240) || 'no drillable subject under click',
+    };
+  }
   const { label, anchor_xy, leader_xy, next_prompt } = raw;
   if (typeof label !== 'string' || !label.trim()) throw new PlannerError('label missing');
   const ax = Array.isArray(anchor_xy) ? [clamp01(anchor_xy[0]), clamp01(anchor_xy[1])] : [clamp01(click_xy[0] + 0.1), clamp01(click_xy[1] + 0.05)];

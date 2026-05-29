@@ -14,9 +14,19 @@ export function useCanvasSSE(canvasId: string | null, onEvent: (evt: SseEvent) =
     const connect = () => {
       if (stopped) return;
       es = new EventSource(`/api/canvas/${canvasId}/events`);
+      // Subscribe to every typed event the server emits. Missing one here
+      // silently drops that event on the floor (EventSource only delivers
+      // events we explicitly addListener to when the server sends an
+      // `event:` field), so keep this list in sync with server/src/sse/events.js.
       const types = [
-        'planning_started', 'planner_done', 'image_started',
-        'image_ready', 'node_ready', 'tree_updated', 'error', 'done',
+        'planning_started',
+        'search_started', 'search_done',
+        'planner_done',
+        'image_started', 'image_ready',
+        'ocr_done',
+        'node_ready', 'tree_updated',
+        'click_rejected', 'node_deleted',
+        'error', 'done',
       ];
       for (const t of types) {
         es.addEventListener(t, (e: MessageEvent) => {

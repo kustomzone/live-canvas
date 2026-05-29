@@ -179,6 +179,12 @@ async function buildAndRegisterNode({
     sources: sources.map((s) => ({
       title: s.title, url: s.url, snippet: s.snippet, source: s.source,
     })),
+    // Record whether web search was enabled when this node was generated.
+    // The UI uses this on navigation to default the search-toggle to the
+    // value the user picked when this node was made (so a tree branch
+    // generated with search-off doesn't silently turn search back on when
+    // the user revisits and clicks deeper).
+    web_search_used: webSearchEnabled !== false,
     path,
     style_tag: 'isometric-illustration',
   };
@@ -314,6 +320,22 @@ export async function expandFromClick(canvas, args = {}) {
     parentNode, clickXY,
     existingLabels: parentNode.hotspots ?? [],
   });
+
+  // Low-confidence rejection: the LLM didn't see anything drillable under
+  // the click. Tell the frontend to clear the pending bubble + toast the
+  // user, then exit without appending a hotspot or generating a child.
+  if (labelOut.rejected) {
+    broadcast(canvas, {
+      type: SseEvents.CLICK_REJECTED, canvasId: canvas.id, jobId,
+      parentHash: parentNode.hash, clickXY,
+      reason: labelOut.reason,
+    });
+    broadcast(canvas, {
+      type: SseEvents.DONE, canvasId: canvas.id, jobId,
+      hash: parentNode.hash, cacheHit: false,
+    });
+    return null;
+  }
 
   // Semantic dedup: same label string already exists?
   const existing = (parentNode.hotspots ?? []).find(

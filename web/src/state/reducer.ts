@@ -87,10 +87,24 @@ export function reducer(state: AppState, action: Action): AppState {
       return { ...state, tree: action.tree, rootHash: state.rootHash ?? action.tree.root };
 
     case 'navigate': {
-      if (!state.nodes[action.hash]) return state;
+      const nextNode = state.nodes[action.hash];
+      if (!nextNode) return state;
       // Manual breadcrumb / hotspot navigation — clear any pending drill origin
       // so the destination plays a "side jump" fade rather than a zoom-in.
-      return { ...state, currentHash: action.hash, status: { phase: 'ready' }, lastDrillFrom: null };
+      // Also re-sync the web-search toggle to whatever value was used when
+      // the destination node was generated, so the toggle reflects the
+      // current branch's history. Falls back to the existing state for
+      // legacy nodes that don't have the field yet.
+      const webSearch = typeof nextNode.web_search_used === 'boolean'
+        ? nextNode.web_search_used
+        : state.webSearch;
+      return {
+        ...state,
+        currentHash: action.hash,
+        status: { phase: 'ready' },
+        lastDrillFrom: null,
+        webSearch,
+      };
     }
 
     case 'click_pending_local': {
@@ -218,20 +232,91 @@ function applySse(state: AppState, evt: SseEvent): AppState {
         nodes: { ...state.nodes, [evt.hash]: node },
         status: { phase: 'ready' as const },
       };
+      // When we adopt this node as the visible one (root on first paint, or
+      // auto-navigate to a freshly-completed child of the current node),
+      // re-sync the web-search toggle to whatever the node was generated
+      // with. See navigate-action comment for rationale.
+      const adoptToggle = (n: Node) =>
+        typeof n.web_search_used === 'boolean' ? n.web_search_used : s.webSearch;
       if (!node.parent) {
         s = {
           ...s,
           rootHash: state.rootHash ?? evt.hash,
           currentHash: state.currentHash ?? evt.hash,
+          webSearch: state.currentHash ? s.webSearch : adoptToggle(node),
         };
       } else if (node.parent && state.currentHash === node.parent) {
-        s = { ...s, currentHash: evt.hash };
+        // Only auto-navigate to a finished child if the user is sitting on
+        // its parent AND there are no other in-flight clicks under that
+        // parent. In multi-click parallel mode we don't want a sibling
+        // racing to first-finished to yank the canvas away from a click
+        // the user might still be evaluating.
+        const otherPending = (state.pendingByParent[node.parent] ?? [])
+          .filter((j) => j !== evt.jobId).length;
+        if (otherPending === 0) {
+          s = { ...s, currentHash: evt.hash, webSearch: adoptToggle(node) };
+        }
       }
       return s;
     }
 
     case 'tree_updated':
       return state;
+
+    case 'click_rejected': {
+      // The label LLM didn't see anything drillable under the click.
+      // Drop the pending bubble + tell the user to pick a different spot.
+      let s = dropPending(state, evt.jobId);
+      // Also clear the drill-from origin so the next navigate doesn't
+      // animate from a stale point.
+      if (s.lastDrillFrom?.parentHash === evt.parentHash) {
+        s = { ...s, lastDrillFrom: null };
+      }
+      const id = _toastId++;
+      const reason = evt.reason || 'No drillable subject under that point.';
+      const msg = `${reason} · 该点无可深入内容,请重新选点`;
+      const toast: Toast = { id, level: 'warn', message: msg };
+      return { ...s, toasts: [...s.toasts, toast].slice(-5) };
+    }
+
+    case 'node_deleted': {
+      // Remove deleted node hashes from state.nodes and from state.tree.
+      const deleted = new Set(evt.deletedHashes);
+      const nodes: Record<string, Node> = {};
+      for (const [h, n] of Object.entries(state.nodes)) {
+        if (deleted.has(h)) continue;
+        // Also strip stale hotspots from surviving parents — the server
+        // rewrites the parent JSON on disk, but our in-memory copy still
+        // holds a hotspot whose next_hash points at a deleted node. Without
+        // this filter the parent's HotspotCard stays visible until the
+        // user navigates away and back.
+        const hotspots = (n.hotspots ?? []).filter(
+          (h) => !h.next_hash || !deleted.has(h.next_hash),
+        );
+        nodes[h] = hotspots.length === (n.hotspots ?? []).length ? n : { ...n, hotspots };
+      }
+      let tree = state.tree;
+      if (tree?.nodes) {
+        const treeNodes: typeof tree.nodes = {};
+        for (const [h, n] of Object.entries(tree.nodes)) {
+          if (deleted.has(h)) continue;
+          // Drop deleted children from the parent's children[] list.
+          const children = (n.children ?? []).filter((c) => !deleted.has(c));
+          treeNodes[h] = { ...n, children };
+        }
+        tree = { ...tree, nodes: treeNodes };
+        if (tree.root && deleted.has(tree.root)) tree = { ...tree, root: null };
+      }
+      // If the user is sitting on a deleted node, jump to its parent (or
+      // root, or gallery) so we don't render a missing node.
+      let currentHash = state.currentHash;
+      if (currentHash && deleted.has(currentHash)) {
+        currentHash = evt.parentHash ?? state.rootHash ?? null;
+      }
+      let rootHash = state.rootHash;
+      if (rootHash && deleted.has(rootHash)) rootHash = null;
+      return { ...state, nodes, tree, currentHash, rootHash };
+    }
 
     case 'error': {
       const id = _toastId++;

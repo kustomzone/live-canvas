@@ -6,7 +6,17 @@ import { enqueueRootGeneration } from '../generation/pipeline.js';
 
 export const canvasRouter = express.Router();
 
-canvasRouter.get('/', async (_req, res) => {
+canvasRouter.get('/', async (req, res) => {
+  // Pagination — `limit` opts into the paginated shape `{items,total,hasMore}`.
+  // Without `limit` the response stays a flat array (back-compat).
+  const rawLimit = req.query?.limit;
+  const rawOffset = req.query?.offset;
+  if (rawLimit !== undefined) {
+    const limit = Math.max(1, Math.min(100, Number(rawLimit) || 24));
+    const offset = Math.max(0, Number(rawOffset) || 0);
+    const page = await listCanvases({ limit, offset });
+    return res.json(page);
+  }
   const list = await listCanvases();
   res.json(list);
 });

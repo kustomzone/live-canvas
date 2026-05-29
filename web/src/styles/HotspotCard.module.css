@@ -20,6 +20,36 @@
   transform: translateY(-2px);
 }
 
+/* Delete pill in the card's top-right corner. Hidden by default; revealed
+   on card hover or keyboard focus so it doesn't compete visually with the
+   label most of the time. */
+.delete {
+  position: absolute;
+  top: -8px;
+  right: -8px;
+  width: 18px;
+  height: 18px;
+  border-radius: 50%;
+  background: #C44;
+  color: #fff;
+  font-size: 11px;
+  display: none;
+  align-items: center;
+  justify-content: center;
+  cursor: pointer;
+  box-shadow: 0 1px 3px rgba(0, 0, 0, 0.2);
+  user-select: none;
+}
+
+.hotspot:hover .delete,
+.hotspot:focus-within .delete,
+.delete:hover,
+.delete:focus {
+  display: inline-flex;
+}
+
+.delete:hover { background: #A33; }
+
 .hotspot.pending {
   opacity: 0.85;
   border-style: dashed;

@@ -1,0 +1,81 @@
+.backdrop {
+  position: fixed;
+  inset: 0;
+  background: rgba(31, 31, 31, 0.45);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  z-index: 1000;
+  animation: fadeIn 140ms ease-out both;
+}
+
+@keyframes fadeIn { from { opacity: 0 } to { opacity: 1 } }
+
+.modal {
+  background: var(--paper);
+  border-radius: 14px;
+  border: 1px solid var(--line);
+  box-shadow: 0 8px 30px rgba(0, 0, 0, 0.18);
+  padding: 22px 22px 16px;
+  min-width: 320px;
+  max-width: min(440px, 92vw);
+  animation: popIn 160ms cubic-bezier(0.22, 0.8, 0.32, 1) both;
+  font-family: inherit;
+}
+
+@keyframes popIn {
+  from { opacity: 0; transform: scale(0.96) translateY(-2px); }
+  to   { opacity: 1; transform: scale(1) translateY(0); }
+}
+
+.title {
+  margin: 0 0 8px;
+  font-size: 16px;
+  font-weight: 700;
+  color: var(--ink);
+}
+
+.body {
+  margin: 0 0 16px;
+  font-size: 13.5px;
+  line-height: 1.5;
+  color: var(--muted);
+  white-space: pre-line;
+}
+
+.actions {
+  display: flex;
+  justify-content: flex-end;
+  gap: 8px;
+}
+
+.btnCancel,
+.btnConfirm,
+.btnDanger {
+  border: 1px solid var(--line);
+  background: var(--paper);
+  color: var(--ink);
+  border-radius: 999px;
+  padding: 6px 16px;
+  cursor: pointer;
+  font: inherit;
+  font-size: 13px;
+}
+
+.btnCancel:hover { background: var(--bg); }
+
+.btnConfirm {
+  border-color: var(--ink);
+  background: var(--ink);
+  color: #fff;
+}
+
+.btnConfirm:hover { background: #000; }
+
+.btnDanger {
+  border-color: #C44;
+  background: #C44;
+  color: #fff;
+}
+
+.btnDanger:hover { background: #A33; border-color: #A33; }

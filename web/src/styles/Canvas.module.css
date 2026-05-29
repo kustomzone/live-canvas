@@ -202,7 +202,12 @@
   border-radius: 999px;
   font-size: 12px;
   z-index: 6;
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
 }
+
+.readOnlyBadge svg { display: block; }
 
 .readOnlyBadge {
   background: rgba(0, 102, 204, 0.9);

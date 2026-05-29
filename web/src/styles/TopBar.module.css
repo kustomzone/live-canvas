@@ -2,14 +2,22 @@
   display: flex;
   align-items: center;
   gap: 8px;
-  padding: 10px 14px;
+  padding: 0 14px;
   border-bottom: 1px solid var(--line);
   background: var(--topbar-bg);
+  /* Fixed height so the bar doesn't jitter when content swaps between
+     gallery (input + button) and canvas (breadcrumb chips) views. The
+     inner address capsule and icon cluster centre into this strip. */
+  height: 56px;
+  min-height: 56px;
+  flex-shrink: 0;
 }
 
 .topbar.compact {
-  padding: 6px 10px;
+  padding: 0 10px;
   gap: 6px;
+  height: 44px;
+  min-height: 44px;
   /* In fullscreen the surrounding shell becomes beige; match it so the
      topbar doesn't read as a separate white strip above the diagram. */
   background: var(--bg);
@@ -47,7 +55,22 @@
 
 .iconBtn:hover { background: var(--bg); }
 
-.iconLabel { font-size: 14px; line-height: 1; }
+.iconLabel {
+  font-size: 14px;
+  line-height: 1;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+}
+
+/* SVG icons inside any topbar button — strip baseline gap so they stay
+   vertically aligned with sibling text and don't push the chip taller. */
+.topbar svg {
+  display: block;
+  flex-shrink: 0;
+}
+
+.btnText { line-height: 1; }
 
 /* Address-bar capsule — same shape as Chrome's URL bar */
 .address {
@@ -200,9 +223,25 @@
 
 .compact .miniBtn { width: 28px; height: 28px; font-size: 13px; }
 
+/* Language toggle is text-only ("EN" / "中"). Size the inner span to the
+   same 16px box the lucide-react SVG icons render at so it sits on the
+   same vertical centre line as the other miniBtn icons. */
+.langText {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 16px;
+  height: 16px;
+  font-size: 11px;
+  font-weight: 700;
+  line-height: 1;
+}
+
+.compact .langText { font-size: 10px; }
+
 /* Mobile */
 @media (max-width: 720px) {
-  .topbar { padding: 6px 8px; gap: 4px; }
+  .topbar { padding: 0 8px; gap: 4px; height: 48px; min-height: 48px; }
   .dots { display: none; }
   .btnText { display: none; }
   .iconBtn { padding: 6px 10px; }

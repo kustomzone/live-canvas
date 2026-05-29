@@ -1,5 +1,7 @@
 import styles from '../styles/TopBar.module.css';
 import type { Node } from '../state/types';
+import { useLang, t } from '../lib/i18n';
+import { Icon } from './Icon';
 
 type Props = {
   view: 'gallery' | 'canvas';
@@ -31,6 +33,8 @@ export function TopBar(props: Props) {
     fullscreen, showChrome, showLabels, webSearch, readOnly, busy,
   } = props;
 
+  const [lang, setLang] = useLang();
+
   const onSubmit = (e: React.FormEvent) => {
     e.preventDefault();
     if (busy || readOnly) return;
@@ -50,11 +54,11 @@ export function TopBar(props: Props) {
           type="button"
           className={styles.iconBtn}
           onClick={onBackToGallery}
-          title="Open gallery / 打开市场"
-          aria-label="Gallery"
+          title={t('topbar.gallery.tip', lang)}
+          aria-label={t('topbar.gallery', lang)}
         >
-          <span className={styles.iconLabel}>☰</span>
-          <span className={styles.btnText}>Gallery</span>
+          <span className={styles.iconLabel}><Icon name="menu" size={14} /></span>
+          <span className={styles.btnText}>{t('topbar.gallery', lang)}</span>
         </button>
       )}
 
@@ -62,11 +66,11 @@ export function TopBar(props: Props) {
       <form className={styles.address} onSubmit={onSubmit}>
         {view === 'gallery' && (
           <>
-            <span className={styles.modeTag}>New</span>
+            <span className={styles.modeTag}>{t('topbar.new', lang)}</span>
             <input
               type="text"
               className={styles.addressInput}
-              placeholder="Enter a topic / 输入主题"
+              placeholder={t('topbar.placeholder', lang)}
               value={draftTopic}
               onChange={(e) => onDraftTopicChange(e.target.value)}
             />
@@ -105,62 +109,68 @@ export function TopBar(props: Props) {
             type="submit"
             disabled={!draftTopic.trim() || busy}
           >
-            {busy ? '…' : 'Generate'}
+            {busy ? '…' : t('topbar.generate', lang)}
           </button>
         )}
       </form>
 
       {/* Right-side icon cluster — always mini */}
       <div className={styles.rightCluster}>
+        <button
+          type="button"
+          className={styles.miniBtn}
+          onClick={() => setLang(lang === 'zh' ? 'en' : 'zh')}
+          title={t('topbar.lang.zh', lang)}
+          aria-label="Switch language"
+        ><span className={styles.langText}>{lang === 'zh' ? 'EN' : '中'}</span></button>
         {!readOnly && (
           <button
             type="button"
             className={styles.miniBtn}
             onClick={onToggleWebSearch}
-            title={webSearch
-              ? 'Web search ON · 联网搜索已开启 (click to disable)'
-              : 'Web search OFF · 联网搜索已关闭 (click to enable)'}
+            title={webSearch ? t('topbar.web.on', lang) : t('topbar.web.off', lang)}
             aria-label="Toggle web search"
             aria-pressed={!webSearch}
-            style={!webSearch ? { opacity: 0.5 } : undefined}
-          >{webSearch ? '🌐' : '⊘'}</button>
+            style={!webSearch ? { opacity: 0.6 } : undefined}
+          ><Icon name={webSearch ? 'web-on' : 'web-off'} size={14} /></button>
         )}
         {view === 'canvas' && !readOnly && (
           <button
             type="button"
             className={styles.miniBtn}
             onClick={onShare}
-            title="Create share link / 创建分享链接"
+            title={t('topbar.share', lang)}
             aria-label="Share"
-          >🔗</button>
+          ><Icon name="share" size={14} /></button>
         )}
         {view === 'canvas' && (
           <button
             type="button"
             className={styles.miniBtn}
             onClick={onToggleLabels}
-            title={showLabels ? 'Hide labels / 隐藏标签' : 'Show labels / 显示标签'}
+            title={showLabels ? t('topbar.labels.hide', lang) : t('topbar.labels.show', lang)}
             aria-label="Toggle labels"
             aria-pressed={!showLabels}
-          >{showLabels ? '🏷' : '⊘'}</button>
+            style={!showLabels ? { opacity: 0.6 } : undefined}
+          ><Icon name={showLabels ? 'tag-on' : 'tag-off'} size={14} /></button>
         )}
         {view === 'canvas' && (
           <button
             type="button"
             className={styles.miniBtn}
             onClick={onToggleFullscreen}
-            title={fullscreen ? 'Exit fullscreen / 退出全屏' : 'Fullscreen / 全屏'}
+            title={fullscreen ? t('topbar.fullscreen.exit', lang) : t('topbar.fullscreen.enter', lang)}
             aria-label="Fullscreen"
-          >{fullscreen ? '⤢' : '⛶'}</button>
+          ><Icon name={fullscreen ? 'fullscreen-exit' : 'fullscreen-enter'} size={14} /></button>
         )}
         {view === 'canvas' && fullscreen && (
           <button
             type="button"
             className={styles.miniBtn}
             onClick={onToggleChrome}
-            title="Toggle UI chrome / 显隐文本面板"
+            title={t('topbar.chrome.toggle', lang)}
             aria-label="Toggle chrome"
-          >{showChrome ? '👁' : '🚫'}</button>
+          ><Icon name={showChrome ? 'eye' : 'eye-off'} size={14} /></button>
         )}
       </div>
     </div>

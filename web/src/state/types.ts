@@ -35,6 +35,10 @@ export type Node = {
   text_layer?: TextSpan[];
   image_w?: number;
   image_h?: number;
+  // True if this node was generated with the web-search step enabled.
+  // Used by the UI on navigation to default the toggle to the value picked
+  // when this node was created.
+  web_search_used?: boolean;
   path: { hash: string; title: string }[];
   generated_at: string;
   style_tag: string;
@@ -59,6 +63,8 @@ export type SseEvent =
   | { type: 'node_ready'; canvasId: string; jobId: string; hash: string; node: Node }
   | { type: 'tree_updated'; canvasId: string; jobId: string; treeNodeCount: number }
   | { type: 'error'; canvasId: string; jobId: string; phase: 'plan' | 'image' | 'register'; message: string; recoverable: boolean }
+  | { type: 'click_rejected'; canvasId: string; jobId: string; parentHash: string; clickXY: [number, number]; reason: string }
+  | { type: 'node_deleted'; canvasId: string; hash: string; deletedHashes: string[]; parentHash: string | null }
   | { type: 'done'; canvasId: string; jobId: string; hash: string; cacheHit: boolean };
 
 // UI-only types

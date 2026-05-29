@@ -111,3 +111,15 @@
   .cardMeta { font-size: 11px; }
   .title { font-size: 18px; }
 }
+
+/* Infinite-scroll sentinel: a thin strip below the grid that
+   IntersectionObserver watches; renders the loader text when fetching the
+   next page. */
+.sentinel {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  min-height: 48px;
+  color: var(--muted);
+  font-size: 12px;
+}

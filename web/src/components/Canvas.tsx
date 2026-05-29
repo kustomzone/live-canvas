@@ -1,13 +1,16 @@
 import { useEffect, useLayoutEffect, useRef, useState } from 'react';
 import styles from '../styles/Canvas.module.css';
-import type { Node, PendingClick } from '../state/types';
+import type { Node, PendingClick, Tree } from '../state/types';
 import { HotspotCard } from './HotspotCard';
 import { SourcesBadge } from './SourcesBadge';
+import { TreeBadge } from './TreeBadge';
 import { LongPressIndicator } from './LongPressIndicator';
 import { TextLayer } from './TextLayer';
+import { Icon } from './Icon';
 import { imageUrl } from '../lib/api';
 import { clamp01, pct } from '../lib/geometry';
 import { layOutHotspots } from '../lib/layout';
+import { useLang, t } from '../lib/i18n';
 
 const MAX_PARALLEL_PER_NODE = 4;
 const LONG_PRESS_MS = 2000;
@@ -16,6 +19,7 @@ const MOVE_CANCEL_PX = 10;
 type Props = {
   canvasId: string;
   node: Node | null;
+  tree: Tree | null;
   imageLoading: boolean;
   pendingClicks: PendingClick[]; // for THIS node
   readOnly: boolean;
@@ -26,20 +30,18 @@ type Props = {
   originXY?: [number, number]; // 0..1, used as transform-origin for drill enter
   onImageClick: (xy: [number, number]) => void;
   onHotspotClick: (index: number) => void;
+  onHotspotDelete?: (index: number) => void;
+  onJumpToHash?: (hash: string) => void;
 };
 
-const PHASE_TEXT_EN: Record<PendingClick['phase'], string> = {
-  planning: 'Inferring label…',
-  image_loading: 'Generating image…',
-  finalizing: 'Finalizing…',
-};
-const PHASE_TEXT_CN: Record<PendingClick['phase'], string> = {
-  planning: '推断标签…',
-  image_loading: '生成图片…',
-  finalizing: '收尾中…',
+const PHASE_KEY: Record<PendingClick['phase'], 'phase.planning' | 'phase.image' | 'phase.finalizing'> = {
+  planning: 'phase.planning',
+  image_loading: 'phase.image',
+  finalizing: 'phase.finalizing',
 };
 
-export function Canvas({ canvasId, node, imageLoading, pendingClicks, readOnly, showChrome, showLabels, fullscreen, enterMode = 'none', originXY, onImageClick, onHotspotClick }: Props) {
+export function Canvas({ canvasId, node, tree, imageLoading, pendingClicks, readOnly, showChrome, showLabels, fullscreen, enterMode = 'none', originXY, onImageClick, onHotspotClick, onHotspotDelete, onJumpToHash }: Props) {
+  const [lang] = useLang();
   const hasImage = !!node?.image;
   const src = node?.image ? imageUrl(canvasId, node.image) : '';
   const isSvg = src.endsWith('.svg');
@@ -276,6 +278,9 @@ export function Canvas({ canvasId, node, imageLoading, pendingClicks, readOnly, 
         <h2 className={styles.title}>
           {node.title}
           {node.sources && node.sources.length > 0 && <SourcesBadge sources={node.sources} />}
+          {tree && onJumpToHash && (
+            <TreeBadge tree={tree} currentHash={node.hash} onJump={onJumpToHash} />
+          )}
         </h2>
       )}
       <div className={styles.stageWrap}>
@@ -343,6 +348,7 @@ export function Canvas({ canvasId, node, imageLoading, pendingClicks, readOnly, 
               index={idx}
               anchor={anchor}
               onClick={onHotspotClick}
+              onDelete={!readOnly ? onHotspotDelete : undefined}
             />
           ))}
         </div>
@@ -356,6 +362,7 @@ export function Canvas({ canvasId, node, imageLoading, pendingClicks, readOnly, 
             to stage space for absolute positioning. */}
         {pendingClicks.map((p) => {
           const [sx, sy] = imageToStage(p.clickXY);
+          const phaseLabel = t(PHASE_KEY[p.phase], lang);
           return (
             <div
               key={p.jobId}
@@ -364,12 +371,11 @@ export function Canvas({ canvasId, node, imageLoading, pendingClicks, readOnly, 
                 left: pct(sx),
                 top: pct(sy),
               }}
-              title={PHASE_TEXT_EN[p.phase]}
+              title={phaseLabel}
             >
               <span className={styles.pendingDot} />
               <span className={styles.pendingLabel}>
-                <span>{PHASE_TEXT_CN[p.phase]}</span>
-                <span>{PHASE_TEXT_EN[p.phase]}</span>
+                <span>{phaseLabel}</span>
               </span>
             </div>
           );
@@ -378,14 +384,14 @@ export function Canvas({ canvasId, node, imageLoading, pendingClicks, readOnly, 
         {/* Capacity badge in top-right when 4/4 */}
         {atCapacity && !readOnly && (
           <div className={styles.capacityBadge}>
-            {pendingClicks.length}/{MAX_PARALLEL_PER_NODE} 并行中 · please wait
+            {pendingClicks.length}/{MAX_PARALLEL_PER_NODE} · {t('canvas.busy.badge', lang)}
           </div>
         )}
 
         {/* Read-only badge */}
         {readOnly && (
           <div className={styles.readOnlyBadge}>
-            👁 Preview · 只读预览
+            <Icon name="eye" size={12} /> {t('canvas.preview.badge', lang)}
           </div>
         )}
       </div>
@@ -394,13 +400,13 @@ export function Canvas({ canvasId, node, imageLoading, pendingClicks, readOnly, 
       {showChrome && !fullscreen && node && !readOnly && (
         <p className={styles.hint}>
           {atCapacity
-            ? 'Wait for one to finish · 4 个并行已满,等其中一个完成'
-            : 'Press and hold any spot on the image (2 s) to expand · 长按图片任意位置 2 秒即可深入'}
+            ? t('canvas.cap.full', lang)
+            : t('canvas.hint.press', lang)}
         </p>
       )}
       {showChrome && !fullscreen && node && readOnly && (
         <p className={styles.hint}>
-          Read-only preview — clicks disabled · 只读预览,无法触发新生成。生成中的进度仍会同步。
+          {t('canvas.preview.hint', lang)}
         </p>
       )}
     </>

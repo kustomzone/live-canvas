@@ -11,4 +11,10 @@ export const SseEvents = Object.freeze({
   TREE_UPDATED: 'tree_updated',
   ERROR: 'error',
   DONE: 'done',
+  // The click-label LLM decided the click didn't land on anything drillable.
+  // Frontend drops the pending bubble and toasts the reason.
+  CLICK_REJECTED: 'click_rejected',
+  // A node and its descendants were deleted. Frontend removes them from
+  // state.nodes / state.tree.nodes and bumps the gallery cover/count.
+  NODE_DELETED: 'node_deleted',
 });

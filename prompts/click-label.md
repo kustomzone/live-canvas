@@ -9,16 +9,20 @@ The user has clicked a point on a flipbook image. Given:
 
 Your job is to:
 
-1. **Infer what visual element the user clicked**, in this priority order:
+1. **First, decide whether the click landed on something drillable.** If `nearby_text` is empty AND `parent_image_prompt` does not describe anything specific at `click_xy` (e.g. the user clicked on blank background, a generic frame, a colour swatch, an unimportant decoration, or somewhere the prose is silent about), reject the click — don't fabricate a subject. Return only `{ "confident": false, "reason": "..." }`.
+2. Otherwise, **infer what visual element the user clicked**, in this priority order:
    1. If `nearby_text` is non-empty, the closest 1–3 fragments (smallest `dist`) almost certainly describe the clicked subject. Treat them as ground truth and synthesise a concrete drillable noun phrase from them. Do NOT pick a subject from a different region just because it sounds richer.
    2. Otherwise, fall back to figuring out which zone of `parent_image_prompt` covers `click_xy` and pick the most specific drillable noun there.
-2. **Decide where to place the new HTML label card** so it does not overlap `existing_labels`. Cards are ~240px wide; keep `anchor_xy` away from existing anchors by at least 0.18 in either x or y. The card should be near (but not on top of) the click point.
-3. **Pick the leader endpoint** as the click point itself or the nearest visual feature, so the leader line clearly connects card → click.
+3. **Decide where to place the new HTML label card** so it does not overlap `existing_labels`. Cards are ~240px wide; keep `anchor_xy` away from existing anchors by at least 0.18 in either x or y. The card should be near (but not on top of) the click point.
+4. **Pick the leader endpoint** as the click point itself or the nearest visual feature, so the leader line clearly connects card → click.
 
-## Output: STRICT JSON
+## Output: STRICT JSON — one of two shapes
+
+### A. Confident — the click is drillable
 
 ```json
 {
+  "confident": true,
   "label": "max 50 chars, in the user's language; concrete drillable noun phrase",
   "anchor_xy": [0.0..1.0, 0.0..1.0],
   "leader_xy": [0.0..1.0, 0.0..1.0],
@@ -26,8 +30,18 @@ Your job is to:
 }
 ```
 
+### B. Not confident — ask the user to re-pick
+
+```json
+{
+  "confident": false,
+  "reason": "short user-facing explanation in the user's language, e.g. '此处没有可深入的内容 / nothing specific to drill into here'"
+}
+```
+
 ## Rules
 
+- Default `confident` is `true` if you are returning a label. Returning shape B means the click is rejected and the UI will tell the user to pick a different spot.
 - `label` is in the SAME language as `parent_title` (Chinese stays Chinese, English stays English).
 - `label` must be a **concrete noun phrase** describing what was clicked, NOT a category like "details" or "more info".
 - When `nearby_text` is provided, `label` must be consistent with the closest fragment(s). E.g. if the closest fragment is "洪都鸡", the label must be about chickens / 洪都鸡 / its dish, not about an unrelated zone the prose mentions.

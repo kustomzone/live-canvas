@@ -33,17 +33,18 @@
   top: 100%;
   right: 0;
   z-index: 60;
-  min-width: 280px;
-  max-width: min(420px, 80vw);
-  max-height: 60vh;
+  min-width: 320px;
+  max-width: min(520px, 86vw);
+  max-height: 70vh;
   background: var(--paper);
   border: 1px solid var(--line);
   border-radius: 12px;
   box-shadow: 0 8px 28px rgba(0, 0, 0, 0.12);
-  padding: 8px 6px;
+  padding: 8px 6px 8px 8px;
   padding-top: 10px;
-  /* Visual gap between badge bottom and popover top — see hover-bridge
-     pseudo-element below, which covers the gap for hit-testing. */
+  /* Visual gap between badge bottom and popover top — feels less crowded
+     than touching them. The hover-bridge below covers the gap so the
+     cursor can cross it without losing focus. */
   margin-top: 8px;
   display: flex;
   flex-direction: column;
@@ -53,9 +54,10 @@
   text-align: left;
 }
 
-/* Hover-bridge: invisible 14px strip overlapping the visual gap so the
-   cursor can cross from badge to popover without firing onMouseLeave on
-   the wrap (which would race-close the popover). */
+/* Invisible hover-bridge spanning the visual gap between badge bottom and
+   the popover's top edge. Without it, the gap above triggers the wrap's
+   onMouseLeave during the cursor transit and the popover flashes closed.
+   The pseudo-element is hit-test-only — fully transparent. */
 .popover::before {
   content: '';
   position: absolute;
@@ -69,16 +71,6 @@
 
 .popover[hidden] { display: none; }
 
-/* Scrollable list inside the popover so long source lists stay usable. */
-.list {
-  display: flex;
-  flex-direction: column;
-  gap: 2px;
-  overflow-y: auto;
-  max-height: calc(60vh - 56px);
-  padding-right: 2px;
-}
-
 .heading {
   font-size: 11px;
   color: var(--muted);
@@ -87,46 +79,65 @@
   margin-bottom: 4px;
 }
 
-.item {
+.list {
   display: flex;
   flex-direction: column;
-  gap: 2px;
-  padding: 6px 8px;
-  border-radius: 8px;
-  text-decoration: none;
-  color: inherit;
+  gap: 1px;
+  overflow-y: auto;
+  max-height: calc(70vh - 56px);
+  padding-right: 2px;
 }
 
-.item:hover { background: var(--bg); }
-
-.itemTitle {
-  font-weight: 600;
+.row {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  padding: 5px 8px;
+  border: 0;
+  border-radius: 6px;
+  background: transparent;
+  cursor: pointer;
+  font: inherit;
   font-size: 12px;
-  white-space: nowrap;
-  overflow: hidden;
-  text-overflow: ellipsis;
   color: var(--ink);
+  text-align: left;
+  white-space: nowrap;
 }
 
-.itemMeta {
+.row:hover { background: var(--bg); }
+
+.row.onPath {
+  color: var(--ink);
+  font-weight: 500;
+}
+
+.row.current {
+  background: rgba(31, 31, 31, 0.06);
+  font-weight: 700;
+}
+
+.row.current::after {
+  content: '◆';
+  margin-left: 6px;
+  color: var(--accent);
   font-size: 10px;
-  color: var(--muted);
-  white-space: nowrap;
+}
+
+.guide {
+  color: #B4A793;
+  font-family: 'Menlo', 'Consolas', monospace;
+  font-size: 11px;
+  white-space: pre;
+  flex-shrink: 0;
+}
+
+.title {
+  flex: 1;
   overflow: hidden;
   text-overflow: ellipsis;
-}
-
-.itemSnippet {
-  font-size: 11px;
-  color: var(--muted);
-  display: -webkit-box;
-  -webkit-line-clamp: 2;
-  line-clamp: 2;
-  -webkit-box-orient: vertical;
-  overflow: hidden;
-  margin-top: 2px;
 }
 
 @media (max-width: 720px) {
-  .popover { min-width: 240px; max-width: 90vw; }
+  .popover { min-width: 260px; max-width: 92vw; }
+  .row { font-size: 11px; }
 }

@@ -82,9 +82,12 @@ export async function listHotspotsForParent(canvasId, parentHash) {
   return Hotspot.findAll({ where: { canvasId, parentHash }, order: [['createdAt', 'ASC']] });
 }
 
-export async function listCanvasesFromDb() {
+export async function listCanvasesFromDb({ limit, offset } = {}) {
   const { Canvas } = models();
-  const rows = await Canvas.findAll({ order: [['lastRunAt', 'DESC']] });
+  const opts = { order: [['lastRunAt', 'DESC']] };
+  if (typeof limit === 'number' && limit > 0) opts.limit = limit;
+  if (typeof offset === 'number' && offset > 0) opts.offset = offset;
+  const rows = await Canvas.findAll(opts);
   return rows.map((r) => ({
     canvasId: r.canvasId,
     topic: r.topic,
@@ -96,6 +99,11 @@ export async function listCanvasesFromDb() {
     created_at: r.createdAt?.toISOString() ?? null,
     last_run_at: r.lastRunAt?.toISOString() ?? null,
   }));
+}
+
+export async function countCanvases() {
+  const { Canvas } = models();
+  return Canvas.count();
 }
 
 export async function bumpNodeCount(canvasId) {
@@ -203,4 +211,38 @@ export async function listTextSpansForNode(canvasId, nodeHash) {
     bbox: [r.x, r.y, r.w, r.h],
     confidence: r.confidence ?? undefined,
   }));
+}
+
+// --- Cascade delete: remove all DB rows for a set of node hashes within a
+// canvas. Caller is responsible for the filesystem side (node JSONs, image
+// files, tree.json patching). Idempotent.
+export async function deleteNodesFromDb(canvasId, hashes) {
+  if (!Array.isArray(hashes) || hashes.length === 0) return;
+  const { Node, Hotspot, Source, TextSpan, Canvas } = models();
+  await Node.destroy({ where: { canvasId, hash: { [Op.in]: hashes } } });
+  // Drop hotspots that point at deleted children, and hotspots whose
+  // PARENT was deleted.
+  await Hotspot.destroy({
+    where: {
+      canvasId,
+      [Op.or]: [
+        { childHash: { [Op.in]: hashes } },
+        { parentHash: { [Op.in]: hashes } },
+      ],
+    },
+  });
+  await Source.destroy({ where: { canvasId, nodeHash: { [Op.in]: hashes } } });
+  await TextSpan.destroy({ where: { canvasId, nodeHash: { [Op.in]: hashes } } });
+  // Refresh canvas's nodeCount + clear cover/root if they pointed at a
+  // deleted node.
+  const c = await Canvas.findByPk(canvasId);
+  if (c) {
+    const remaining = await Node.count({ where: { canvasId } });
+    const patch = { nodeCount: remaining };
+    if (c.rootHash && hashes.includes(c.rootHash)) patch.rootHash = null;
+    if (c.coverImage && hashes.some((h) => c.coverImage.includes(`/${h}.`))) {
+      patch.coverImage = null;
+    }
+    await Canvas.update(patch, { where: { canvasId } });
+  }
 }

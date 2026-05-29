@@ -5,7 +5,7 @@ import { paths } from './paths.js';
 import { writeJsonAtomic } from './treeStore.js';
 import { slugify } from '../lib/slug.js';
 import { PerCanvasQueue } from '../generation/queue.js';
-import { upsertCanvasMeta, touchCanvas, listCanvasesFromDb } from '../db/repo.js';
+import { upsertCanvasMeta, touchCanvas, listCanvasesFromDb, countCanvases } from '../db/repo.js';
 
 // In-memory runtime registry. Disk is the source of truth for "what canvases exist".
 // Memory is the source of truth for "who is listening" and "what jobs are queued".
@@ -71,10 +71,18 @@ export async function createCanvas({ topic, branches = 5 }) {
   return runtime;
 }
 
-export async function listCanvases() {
+export async function listCanvases({ limit, offset } = {}) {
   await ensureCanvasesRoot();
   // Read from DB (kept in sync with disk by hydrate on boot + register hooks)
-  return listCanvasesFromDb();
+  const items = await listCanvasesFromDb({ limit, offset });
+  // Caller may want pagination metadata when limit is set; otherwise just
+  // return the array (back-compat with non-paginated callers).
+  if (typeof limit === 'number') {
+    const total = await countCanvases();
+    const consumed = (offset ?? 0) + items.length;
+    return { items, total, hasMore: consumed < total };
+  }
+  return items;
 }
 
 export async function getCanvas(id) {

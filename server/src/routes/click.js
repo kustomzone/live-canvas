@@ -3,6 +3,7 @@ import { getCanvas } from '../store/canvasStore.js';
 import { isSafeId, isSafeHash } from '../store/paths.js';
 import { readNode, nodeExists } from '../store/nodeStore.js';
 import { enqueueClickExpansion } from '../generation/pipeline.js';
+import { deleteNodeCascade } from '../generation/deleteNode.js';
 
 export const clickRouter = express.Router();
 
@@ -34,4 +35,22 @@ clickRouter.post('/:id/click', async (req, res) => {
     clickXY: [cx, cy],
     queue: result.queue,
   });
+});
+
+// DELETE /api/canvas/:id/nodes/:hash  → cascade-delete a node + descendants.
+clickRouter.delete('/:id/nodes/:hash', async (req, res) => {
+  const { id, hash } = req.params;
+  if (!isSafeId(id)) return res.status(400).json({ error: 'bad_id' });
+  if (!isSafeHash(hash)) return res.status(400).json({ error: 'bad_hash' });
+  const runtime = await getCanvas(id);
+  if (!runtime) return res.status(404).json({ error: 'canvas_not_found' });
+  try {
+    const result = await deleteNodeCascade(runtime, hash);
+    if (result.deletedHashes.length === 0) {
+      return res.status(404).json({ error: 'node_not_found' });
+    }
+    res.json(result);
+  } catch (e) {
+    res.status(500).json({ error: 'delete_failed', message: e?.message });
+  }
 });
