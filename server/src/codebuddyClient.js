@@ -85,11 +85,16 @@ function tryParseJson(stdout) {
   try {
     const top = JSON.parse(stdout);
     if (Array.isArray(top)) {
-      const result = [...top].reverse().find((m) => m && m.type === 'result' && typeof m.result === 'string');
-      if (result) answer = result.result;
+      const result = [...top].reverse().find((m) => m && m.type === 'result');
+      if (result) {
+        // Newer clients sometimes return result already as an object.
+        if (result.result && typeof result.result === 'object') return result.result;
+        if (typeof result.result === 'string') answer = result.result;
+      }
     } else if (top && typeof top === 'object') {
       // Single-object shape (older clients): {result: "..."} or already the JSON itself
       if (typeof top.result === 'string') answer = top.result;
+      else if (top.result && typeof top.result === 'object') return top.result;
       else return top; // Already-parsed payload
     }
   } catch { /* not array/object — fall through */ }
@@ -97,40 +102,81 @@ function tryParseJson(stdout) {
   // Step 2: if no `answer` extracted, treat full stdout as the answer.
   const text = answer ?? stdout;
 
-  // Step 3: parse the answer text as JSON. Strip code fences and find the
-  // first {...} or [...] block as a fallback.
-  const stripped = text
-    .replace(/^\s*```(?:json)?\s*/i, '')
-    .replace(/\s*```\s*$/i, '')
-    .trim();
+  // Step 3a: strip surrounding code fences if any.
+  let stripped = text.trim();
+  // Match ```json ... ``` or ``` ... ``` anywhere if it brackets the whole text.
+  const fenced = stripped.match(/^```(?:json|JSON)?\s*\n?([\s\S]*?)\n?```\s*$/);
+  if (fenced) stripped = fenced[1].trim();
+
+  // Step 3b: direct parse.
   try { return JSON.parse(stripped); } catch {}
 
-  const firstObj = stripped.indexOf('{');
-  const lastObj = stripped.lastIndexOf('}');
-  if (firstObj >= 0 && lastObj > firstObj) {
-    try { return JSON.parse(stripped.slice(firstObj, lastObj + 1)); } catch {}
-  }
-  const firstArr = stripped.indexOf('[');
-  const lastArr = stripped.lastIndexOf(']');
-  if (firstArr >= 0 && lastArr > firstArr) {
-    try { return JSON.parse(stripped.slice(firstArr, lastArr + 1)); } catch {}
-  }
+  // Step 3c: balanced-brace / bracket scan. Walk the string and return the
+  // FIRST complete top-level JSON object/array that parses cleanly. This
+  // tolerates leading prose, trailing prose, fenced code blocks mid-text, and
+  // stray braces inside string literals.
+  const scanned = extractFirstJson(stripped);
+  if (scanned !== undefined) return scanned;
+
   throw new Error('could not parse JSON from codebuddy stdout');
+}
+
+// Walk `s` and return the first balanced JSON value (object or array) that
+// JSON.parses cleanly. Returns `undefined` if none found.
+function extractFirstJson(s) {
+  for (let i = 0; i < s.length; i++) {
+    const ch = s[i];
+    if (ch !== '{' && ch !== '[') continue;
+    const end = findMatchingClose(s, i);
+    if (end < 0) continue;
+    const slice = s.slice(i, end + 1);
+    try { return JSON.parse(slice); } catch { /* keep scanning */ }
+  }
+  return undefined;
+}
+
+// Given an opening `{` or `[` at index `start`, return the index of its
+// matching close, accounting for string literals (with escapes). Returns -1
+// if unbalanced.
+function findMatchingClose(s, start) {
+  const open = s[start];
+  const close = open === '{' ? '}' : ']';
+  let depth = 0;
+  let inStr = false;
+  let escape = false;
+  for (let i = start; i < s.length; i++) {
+    const ch = s[i];
+    if (inStr) {
+      if (escape) { escape = false; continue; }
+      if (ch === '\\') { escape = true; continue; }
+      if (ch === '"') inStr = false;
+      continue;
+    }
+    if (ch === '"') { inStr = true; continue; }
+    if (ch === open) depth++;
+    else if (ch === close) {
+      depth--;
+      if (depth === 0) return i;
+    }
+  }
+  return -1;
 }
 
 export async function callOnce({ prompt, timeoutMs = config.plannerTimeoutMs }) {
   return sem.run(async () => {
     let lastErr;
+    let lastStdout = '';
     for (let attempt = 1; attempt <= 2; attempt++) {
       try {
         const finalPrompt = attempt === 1
           ? prompt
-          : `${prompt}\n\n# IMPORTANT\nReturn JSON ONLY. No prose. No backticks. No commentary.`;
+          : `${prompt}\n\n# IMPORTANT\nReturn JSON ONLY. No prose. No backticks. No commentary. Start your response with { and end with }.`;
         const { stdout } = await runCodebuddy({
           args: ['--print', '--output-format', 'json', '-y'],
           stdin: finalPrompt,
           timeoutMs,
         });
+        lastStdout = stdout ?? '';
         if (!stdout?.trim()) throw new PlannerError('empty stdout from codebuddy');
         const parsed = tryParseJson(stdout);
         return { raw: stdout, parsed };
@@ -139,6 +185,23 @@ export async function callOnce({ prompt, timeoutMs = config.plannerTimeoutMs }) 
         log.warn(`callOnce attempt ${attempt} failed:`, e?.message);
       }
     }
+    // Dump a diagnostic file so the failure mode is recoverable from disk.
+    try {
+      const dumpPath = `/tmp/flipbook-planner-fail-${Date.now()}.log`;
+      await fs.writeFile(
+        dumpPath,
+        [
+          `# planner failure: ${lastErr?.message ?? 'unknown'}`,
+          '',
+          '## prompt (truncated to 4k):',
+          (prompt ?? '').slice(0, 4000),
+          '',
+          '## last stdout (truncated to 8k):',
+          lastStdout.slice(0, 8000),
+        ].join('\n'),
+      );
+      log.warn(`callOnce dumped failure to ${dumpPath}`);
+    } catch {}
     throw new PlannerError(`planner failed after retries: ${lastErr?.message}`);
   });
 }
