@@ -211,12 +211,15 @@
   background: rgba(0, 102, 204, 0.92);
   /* Compact icon-only chip — 28×28 circle, no surrounding text. Used as a
      visual marker that the canvas is in read-only / preview mode. Inline
-     style sets `top` / `right` to track the painted-image rect (see Canvas
-     .tsx); the static defaults here are the stage-corner fallback. */
+     style sets `top` / `right` (in % of the stage) to track the painted-
+     image rect (see Canvas.tsx); the translate() insets the chip from
+     the corner so it sits inside the picture instead of straddling the
+     edge. The translate values shrink in mobile media queries below. */
   width: 28px;
   height: 28px;
   padding: 0;
   justify-content: center;
+  transform: translate(-10px, 10px);
 }
 
 .readOnlyBadge svg { display: block; }
@@ -227,4 +230,14 @@
   .caption { font-size: 13px; line-height: 1.45; padding: 0 4px; }
   .pendingLabel span:first-child { display: none; }  /* keep just CN line */
   .pendingLabel { font-size: 10px; padding: 3px 8px; }
+  /* Read-only chip shrinks proportionally on small screens — the inline
+     style sets the corner anchoring; the translate() inset tightens so
+     the chip stays inside the painted image. */
+  .readOnlyBadge { width: 22px; height: 22px; transform: translate(-6px, 6px); }
+  .readOnlyBadge svg { width: 11px; height: 11px; }
+}
+
+@media (max-width: 480px) {
+  .readOnlyBadge { width: 20px; height: 20px; transform: translate(-4px, 4px); }
+  .readOnlyBadge svg { width: 10px; height: 10px; }
 }

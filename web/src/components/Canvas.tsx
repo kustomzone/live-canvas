@@ -398,7 +398,9 @@ export function Canvas({ canvasId, node, tree, imageLoading, pendingClicks, read
             corner (not the stage's), so in fullscreen / pillar-boxed layouts
             it stays glued to the picture instead of floating in the empty
             letterbox strip. Falls back to stage corner pre-measure. Uses a
-            lock icon to distinguish it from the eye-shaped chrome toggle. */}
+            lock icon to distinguish it from the eye-shaped chrome toggle.
+            The fixed --readonly-offset (set in CSS) handles the inset on
+            both desktop and small screens — only top/right are inlined. */}
         {readOnly && (
           <div
             className={styles.readOnlyBadge}
@@ -406,7 +408,6 @@ export function Canvas({ canvasId, node, tree, imageLoading, pendingClicks, read
               top: `${imageRect.top}%`,
               right: `${100 - (imageRect.left + imageRect.width)}%`,
               left: 'auto',
-              transform: 'translate(-12px, 12px)',
             } : undefined}
             title={t('canvas.preview.badge', lang)}
             aria-label={t('canvas.preview.badge', lang)}
