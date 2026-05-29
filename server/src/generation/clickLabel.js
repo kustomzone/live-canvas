@@ -2,6 +2,7 @@
 // ask the LLM to produce { label, anchor_xy, leader_xy, next_prompt }.
 import { loadPrompt } from './prompts.js';
 import { callOnce } from '../codebuddyClient.js';
+import { renderClickMarker } from './clickMarker.js';
 import { PlannerError } from '../lib/errors.js';
 
 function clamp01(n) { return Math.max(0, Math.min(1, Number(n) || 0)); }
@@ -56,10 +57,27 @@ function nearbyOcrSpans(textLayer, [cx, cy], { radius = 0.18, limit = 12 } = {})
   return out.slice(0, limit);
 }
 
-export async function callClickLabel({ parentNode, clickXY, existingLabels }) {
+export async function callClickLabel({ parentNode, clickXY, existingLabels, canvasId, jobId }) {
   const promptText = await loadPrompt('click-label.md');
   const cx = clamp01(clickXY[0]);
   const cy = clamp01(clickXY[1]);
+
+  // Render a click marker on a copy of the parent image. The marked PNG
+  // is written to /tmp and referenced in the prompt with codebuddy's
+  // `@<path>` syntax — when the underlying model is multimodal, this is
+  // picked up as an attached image and the LLM can literally see what's
+  // under the red circle. Even when not, the file remains a valuable
+  // post-mortem artifact (open it to see what the user actually clicked).
+  let markerPath = null;
+  if (canvasId && parentNode?.hash && jobId) {
+    markerPath = await renderClickMarker({
+      canvasId,
+      parentHash: parentNode.hash,
+      clickXY: [cx, cy],
+      jobId,
+    });
+  }
+
   const inputs = {
     parent_image_prompt: parentNode.image_prompt,
     parent_title: parentNode.title,
@@ -76,15 +94,23 @@ export async function callClickLabel({ parentNode, clickXY, existingLabels }) {
       leader_xy: h.leader_xy,
     })),
   };
-  const prompt = [
-    promptText,
+  const promptParts = [promptText];
+  if (markerPath) {
+    // Include the @-reference up front so any vision-capable model loads
+    // it alongside the prompt. Plain-text models simply see a path string
+    // and ignore it — no harm done.
+    promptParts.push('', `## Click marker image`, `@${markerPath}`, '',
+      'A red circled crosshair has been drawn on the parent image at the user\'s click point. Treat this as the strongest possible spatial signal: the subject is whatever is INSIDE or directly UNDER the red circle.');
+  }
+  promptParts.push(
     '',
     '## Inputs (JSON)',
     JSON.stringify(inputs, null, 2),
     '',
     '## Output',
     'Return JSON ONLY matching the schema above. No prose. No backticks.',
-  ].join('\n');
+  );
+  const prompt = promptParts.join('\n');
   const { parsed } = await callOnce({ prompt });
   return validateClickLabel(parsed, { click_xy: inputs.click_xy });
 }

@@ -319,6 +319,8 @@ export async function expandFromClick(canvas, args = {}) {
   const labelOut = await clickLabelCall({
     parentNode, clickXY,
     existingLabels: parentNode.hotspots ?? [],
+    canvasId: canvas.id,
+    jobId,
   });
 
   // Low-confidence rejection: the LLM didn't see anything drillable under
