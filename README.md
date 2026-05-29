@@ -25,10 +25,6 @@ frontend, a **pluggable multi-model image pipeline**, web-search augmented
 planning, per-node concurrency, read-only share links, fullscreen casting and
 a fully responsive mobile layout.
 
-> 🔒 **Scope reminder**: localhost only, no built-in auth. `?n=<canvasId>` /
-> `?s=<shareToken>` are the only access tokens — don't expose this beyond your
-> own machine.
-
 ---
 
 ## ✨ Why this is fun
@@ -235,15 +231,6 @@ abstract / timeless subjects skip search. When yes:
    with the source list (220 ms grace period so the popover is reachable with
    the mouse).
 
-> **No sources showing up?** Two common causes:
-> 1. **Stale server process** — `decideSearch.js` / `webSearch.js` were edited
->    but the dev server wasn't restarted. `node --watch` only reloads if the
->    process is still alive; a killed server means new generations never run
->    the new code. Restart `npm run dev:server`.
-> 2. **Old nodes** — sources are written when a node is *generated*. Existing
->    nodes won't retroactively get sources. Click into a fresh hotspot or
->    start a new canvas to see them.
-
 ## 🔗 Share / preview links
 
 - `POST /api/canvas/:id/share` → `{token, url}`. Reuses an existing token for
@@ -266,13 +253,10 @@ abstract / timeless subjects skip search. When yes:
 ## 🧹 Cleaning local state
 
 ```bash
-npm run clean:data    # rimraf server/data — DESTRUCTIVE, all canvases gone
-npm run clean:dist    # rimraf web/dist
+npm run clean:data    # reset server/data (all canvases)
+npm run clean:dist    # reset web/dist
 npm run clean         # both
 ```
-
-> ⚠️ `server/data/` holds expensive LLM-generated artifacts. Don't wipe it
-> casually — back up `canvases/` first if anything in there matters.
 
 ## 📦 Build for production
 
