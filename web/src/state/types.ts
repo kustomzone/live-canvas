@@ -126,6 +126,25 @@ export type AppState = {
   lastDrillFrom: { parentHash: string; xy: [number, number] } | null;
 };
 
+// localStorage-backed pref for the web-search toggle. Read once at module
+// load so initialState reflects the user's last choice across page reloads.
+// Defaults to ON when no value is stored or on SSR/Node.
+const WEB_SEARCH_KEY = 'flipbook_web_search';
+function readWebSearchPref(): boolean {
+  if (typeof window === 'undefined') return true;
+  try {
+    const v = window.localStorage.getItem(WEB_SEARCH_KEY);
+    if (v === '0') return false;
+    if (v === '1') return true;
+  } catch { /* localStorage unavailable */ }
+  return true;
+}
+
+export function persistWebSearchPref(on: boolean) {
+  if (typeof window === 'undefined') return;
+  try { window.localStorage.setItem(WEB_SEARCH_KEY, on ? '1' : '0'); } catch {}
+}
+
 export const initialState: AppState = {
   view: 'gallery',
   canvasId: null,
@@ -143,6 +162,6 @@ export const initialState: AppState = {
   fullscreen: false,
   showChrome: true,
   showLabels: true,
-  webSearch: true,
+  webSearch: readWebSearchPref(),
   lastDrillFrom: null,
 };

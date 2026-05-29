@@ -1,5 +1,5 @@
 import type { AppState, Node, SseEvent, Tree, Toast, View, PendingClick } from './types';
-import { initialState } from './types';
+import { initialState, persistWebSearchPref } from './types';
 
 export type Action =
   | { type: 'reset' }
@@ -141,8 +141,15 @@ export function reducer(state: AppState, action: Action): AppState {
     case 'toggle_labels':
       return { ...state, showLabels: !state.showLabels };
 
-    case 'toggle_web_search':
-      return { ...state, webSearch: !state.webSearch };
+    case 'toggle_web_search': {
+      const next = !state.webSearch;
+      // Persist across page reloads. Per-node history (node.web_search_used)
+      // still overrides on navigate, so this only changes the *default* the
+      // user sees when starting fresh / before navigating to a node that
+      // recorded its own value.
+      persistWebSearchPref(next);
+      return { ...state, webSearch: next };
+    }
 
     case 'consume_drill_origin':
       return state.lastDrillFrom ? { ...state, lastDrillFrom: null } : state;
