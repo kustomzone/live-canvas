@@ -10,8 +10,8 @@ import { Gallery } from './components/Gallery';
 import { ConfirmModal } from './components/ConfirmModal';
 import { ClickComposer } from './components/ClickComposer';
 import { useCanvasSSE } from './hooks/useCanvasSSE';
-import { createCanvas, clickAt, getNode, getTree, createShareLink, resolveShareLink, deleteNode } from './lib/api';
-import { useLang, t } from './lib/i18n';
+import { createCanvas, clickAt, getNode, getTree, createShareLink, resolveShareLink, deleteNode, regenerateNode } from './lib/api';
+import { useLang, t, displayTopic } from './lib/i18n';
 import { revokeSelection, type ImageSelection } from './lib/imageUpload';
 
 function readUrlState() {
@@ -320,6 +320,9 @@ export default function App() {
   // --- Delete confirmation modal state. We stage which hotspot the user
   // wants to delete here; the modal reads it and on confirm calls the API.
   const [deleteTarget, setDeleteTarget] = useState<{ hash: string; label: string; descendantCount: number } | null>(null);
+  // Regenerate confirmation modal — single boolean is enough since the
+  // target is always state.currentHash at click time.
+  const [regenTarget, setRegenTarget] = useState<{ hash: string; title: string; descendantCount: number } | null>(null);
 
   const onHotspotDelete = useCallback((index: number) => {
     if (state.readOnly) return;
@@ -365,6 +368,53 @@ export default function App() {
   }, [deleteTarget, state.canvasId]);
 
   const cancelDelete = useCallback(() => setDeleteTarget(null), []);
+
+  // Open the Regenerate confirm modal for the currently-displayed node.
+  // We pre-count descendants from state.tree so the modal body can warn
+  // the user how much will be wiped.
+  const onRegenerate = useCallback(() => {
+    if (state.readOnly) return;
+    if (!state.canvasId || !state.currentHash) return;
+    const node = state.nodes[state.currentHash];
+    if (!node) return;
+    const treeNodes = state.tree?.nodes;
+    let descendantCount = 0;
+    if (treeNodes) {
+      const seen = new Set<string>();
+      // Count children only — not the node itself (it stays in place,
+      // server will re-roll its content).
+      const queue: string[] = [...(treeNodes[node.hash]?.children ?? [])];
+      while (queue.length) {
+        const h = queue.shift()!;
+        if (seen.has(h)) continue;
+        seen.add(h);
+        const tn = treeNodes[h];
+        if (tn?.children) for (const c of tn.children) if (!seen.has(c)) queue.push(c);
+      }
+      descendantCount = seen.size;
+    }
+    setRegenTarget({ hash: node.hash, title: node.title, descendantCount });
+  }, [state.canvasId, state.currentHash, state.nodes, state.readOnly, state.tree]);
+
+  const confirmRegenerate = useCallback(async () => {
+    if (!regenTarget || !state.canvasId) {
+      setRegenTarget(null);
+      return;
+    }
+    const { hash, title } = regenTarget;
+    setRegenTarget(null);
+    try {
+      // Pass the current toggle state — webSearch for the regen pass is
+      // the user's CURRENT intent, not whatever was persisted on the
+      // node from its original generation.
+      await regenerateNode(state.canvasId, hash, { webSearch: state.webSearch });
+      dispatch({ type: 'add_toast', toast: { level: 'info', message: `${title} · ${t('toast.regenerating', lang)}` } });
+    } catch (e) {
+      dispatch({ type: 'add_toast', toast: { level: 'error', message: `Regenerate failed: ${(e as Error).message}` } });
+    }
+  }, [regenTarget, state.canvasId, state.webSearch, lang]);
+
+  const cancelRegenerate = useCallback(() => setRegenTarget(null), []);
 
   const onJumpBreadcrumb = useCallback((hash: string) => {
     if (state.nodes[hash]) {
@@ -520,6 +570,7 @@ export default function App() {
           onToggleLabels={onToggleLabels}
           onToggleWebSearch={onToggleWebSearch}
           onToggleComposeOnClick={() => setComposeOnClick((v) => !v)}
+          onRegenerate={onRegenerate}
           attachment={topicAttachment}
           onAttachmentChange={(sel) => {
             // Revoke the previous preview URL when replacing.
@@ -593,14 +644,29 @@ export default function App() {
         title={t('confirm.delete.title', lang)}
         body={deleteTarget
           ? lang === 'zh'
-            ? `这将永久删除「${deleteTarget.label}」及其下的 ${deleteTarget.descendantCount} 个画匹(含子孙画匹和图片),无法恢复。`
-            : `«${deleteTarget.label}» will be deleted along with ${deleteTarget.descendantCount} node${deleteTarget.descendantCount === 1 ? '' : 's'} (including its descendants and images). This cannot be undone.`
+            ? `这将永久删除「${displayTopic(deleteTarget.label, lang)}」及其下的 ${deleteTarget.descendantCount} 张画布(含子孙画布和图片),无法恢复。`
+            : `«${displayTopic(deleteTarget.label, lang)}» will be deleted along with ${deleteTarget.descendantCount} node${deleteTarget.descendantCount === 1 ? '' : 's'} (including its descendants and images). This cannot be undone.`
           : ''}
         confirmLabel={t('confirm.delete.confirm', lang)}
         cancelLabel={t('confirm.delete.cancel', lang)}
         destructive
         onConfirm={confirmDelete}
         onCancel={cancelDelete}
+      />
+
+      <ConfirmModal
+        open={!!regenTarget}
+        title={t('confirm.regen.title', lang)}
+        body={regenTarget
+          ? lang === 'zh'
+            ? `「${displayTopic(regenTarget.title, lang)}」将被重新生成,并清除其下 ${regenTarget.descendantCount} 张子画布(含子孙画布和图片),无法恢复。`
+            : `«${displayTopic(regenTarget.title, lang)}» will be regenerated, and ${regenTarget.descendantCount} descendant node${regenTarget.descendantCount === 1 ? '' : 's'} (with images) will be wiped. This cannot be undone.`
+          : ''}
+        confirmLabel={t('confirm.regen.confirm', lang)}
+        cancelLabel={t('confirm.regen.cancel', lang)}
+        destructive
+        onConfirm={confirmRegenerate}
+        onCancel={cancelRegenerate}
       />
     </div>
   );

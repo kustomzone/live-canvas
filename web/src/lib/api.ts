@@ -83,10 +83,15 @@ export async function listCanvases(): Promise<GalleryEntry[]> {
 export async function listCanvasesPage(
   limit: number,
   offset: number,
+  lastCanvasId?: string | null,
   signal?: AbortSignal,
 ): Promise<{ items: GalleryEntry[]; total: number; hasMore: boolean }> {
-  const url = `${API}/canvas?limit=${limit}&offset=${offset}`;
-  const res = await fetch(url, signal ? { signal } : undefined);
+  const params = new URLSearchParams({
+    limit: String(limit),
+    offset: String(offset),
+  });
+  if (lastCanvasId) params.set('lastCanvasId', lastCanvasId);
+  const res = await fetch(`${API}/canvas?${params.toString()}`, signal ? { signal } : undefined);
   if (!res.ok) throw new Error(`listCanvasesPage failed: ${res.status}`);
   return res.json();
 }
@@ -120,6 +125,29 @@ export async function deleteNode(
   if (!res.ok) {
     const txt = await res.text();
     throw new Error(`delete failed: ${res.status} ${txt}`);
+  }
+  return res.json();
+}
+
+// Re-roll the current node — server cascades-delete descendants and
+// re-enqueues the build with the same parent + recorded click_xy +
+// user_label + seed_image. Caller passes the current webSearch toggle
+// state so the new pass uses the user's intent rather than the persisted
+// value from the original generation.
+export async function regenerateNode(
+  canvasId: string,
+  hash: string,
+  opts: { webSearch?: boolean } = {},
+): Promise<{ ok: boolean; deletedHashes: string[]; parentHash: string | null }> {
+  const body = opts.webSearch === undefined ? null : { webSearch: opts.webSearch };
+  const res = await fetch(`${API}/canvas/${canvasId}/nodes/${hash}/regenerate`, {
+    method: 'POST',
+    headers: body ? { 'Content-Type': 'application/json' } : undefined,
+    body: body ? JSON.stringify(body) : undefined,
+  });
+  if (!res.ok) {
+    const txt = await res.text();
+    throw new Error(`regenerate failed: ${res.status} ${txt}`);
   }
   return res.json();
 }

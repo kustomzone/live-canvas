@@ -4,6 +4,7 @@ import { isSafeId, isSafeHash } from '../store/paths.js';
 import { readNode, nodeExists } from '../store/nodeStore.js';
 import { enqueueClickExpansion } from '../generation/pipeline.js';
 import { deleteNodeCascade } from '../generation/deleteNode.js';
+import { regenerateNode } from '../generation/regenerateNode.js';
 import { uploadMemory, persistUpload } from './upload.js';
 import { nanoid } from 'nanoid';
 
@@ -54,6 +55,39 @@ clickRouter.delete('/:id/nodes/:hash', async (req, res) => {
     res.json(result);
   } catch (e) {
     res.status(500).json({ error: 'delete_failed', message: e?.message });
+  }
+});
+
+// POST /api/canvas/:id/nodes/:hash/regenerate
+//   Cascade-delete the node's descendants (and the node itself for non-
+//   root re-rolls; root nodes get their image+JSON dropped too) and
+//   re-enqueue the same drilldown so the user can re-roll a result they
+//   don't like. Replays the EXACT inputs (parent + click_xy + user_label
+//   + seed_image) recorded on the node's gen_inputs field. Web search
+//   for the new pass uses the caller's current toggle (request body's
+//   `webSearch`), NOT the persisted value — this matches user intent
+//   when the toggle has been flipped since the original generation.
+clickRouter.post('/:id/nodes/:hash/regenerate', async (req, res) => {
+  const { id, hash } = req.params;
+  if (!isSafeId(id)) return res.status(400).json({ error: 'bad_id' });
+  if (!isSafeHash(hash)) return res.status(400).json({ error: 'bad_hash' });
+  const runtime = await getCanvas(id);
+  if (!runtime) return res.status(404).json({ error: 'canvas_not_found' });
+  // webSearch is opt-out — undefined means "use the persisted value";
+  // explicit boolean from the UI overrides.
+  const webSearchEnabled = typeof req.body?.webSearch === 'boolean'
+    ? req.body.webSearch
+    : (req.body?.webSearch === '0' || req.body?.webSearch === 'false')
+      ? false
+      : (req.body?.webSearch === '1' || req.body?.webSearch === 'true')
+        ? true
+        : undefined;
+  try {
+    const result = await regenerateNode(runtime, hash, { webSearchEnabled });
+    if (!result.ok) return res.status(404).json({ error: 'regenerate_failed', reason: result.reason });
+    res.status(202).json(result);
+  } catch (e) {
+    res.status(500).json({ error: 'regenerate_failed', message: e?.message });
   }
 });
 

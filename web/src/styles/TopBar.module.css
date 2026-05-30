@@ -364,6 +364,12 @@
 
 .moreItem.moreItemOn svg { color: var(--ink); }
 
+.moreSep {
+  height: 1px;
+  background: var(--line);
+  margin: 4px 4px;
+}
+
 .moreItemLabel {
   flex: 1;
   white-space: nowrap;

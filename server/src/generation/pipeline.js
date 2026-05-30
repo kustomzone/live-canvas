@@ -21,7 +21,8 @@ import { stubPlannerOutput, stubClickLabel } from './stubPlanner.js';
 import { callDecideSearch, stubDecideSearch } from './decideSearch.js';
 import { searchWeb } from './searchWeb.js';
 import { runOcr } from './ocr.js';
-import { touchLastRun } from '../store/canvasStore.js';
+import { describeSeedImage } from './describeSeed.js';
+import { touchLastRun, updateCanvasTopic } from '../store/canvasStore.js';
 import {
   recordNode, recordHotspot, bumpNodeCount, setCoverIfMissing,
   findNearbyHotspot, recordSources, recordTextSpans,
@@ -130,30 +131,89 @@ async function buildAndRegisterNode({
   // composition/subject and only restyle, and the image provider is
   // asked to image-to-image edit instead of generate from scratch.
   seedImagePath = null,
+  // Snapshot of the inputs that produced this node — replayed by
+  // regenerateNode so a re-roll uses the same seed image, user label,
+  // and click position on the host parent. Persisted on the node JSON
+  // as `gen_inputs`.
+  genInputs = null,
 }) {
   const depth = parentNode ? (parentNode.depth ?? 0) + 1 : 0;
 
-  // Optional web-search step before planner.
-  const sources = await decideAndSearch({
-    canvas, jobId,
-    topic: canvas.topic,
-    path: parentNode?.path ?? [],
-    currentLabel: currentLabel ?? '',
-    depth,
-    intent: parentNode ? 'drilldown' : 'root',
-    webSearchEnabled,
-  });
+  // When the user attached a seed image, run a describe-first LLM pass
+  // so downstream steps (search queries, planner caption, image prompt)
+  // can ground in the actual content of the picture rather than the
+  // canvas's filename-derived topic. This is what fixes the symptoms
+  // where search queries contained the word "seed" and captions read
+  // "this is the source image".
+  let seedDescription = null;
+  if (seedImagePath && config.enableCodebuddy) {
+    try {
+      seedDescription = await describeSeedImage({
+        seedImagePath,
+        userTopic: canvas.topic,
+      });
+      if (seedDescription?.suggested_topic) {
+        log.info(`[seed] describe → "${seedDescription.subject}" (queries: ${(seedDescription.search_queries || []).join(', ') || '∅'})`);
+      }
+    } catch (e) {
+      log.warn(`[seed] describe failed: ${e?.message}`);
+    }
+  }
+
+  // Effective subject — prefer the model's read of what's actually in the
+  // image to whatever placeholder the upload route used as the canvas
+  // topic. Used for the search step + recorded as the canonical title
+  // on the planner output.
+  const effectiveSubject = seedDescription?.subject
+    || seedDescription?.suggested_topic
+    || canvas.topic;
+
+  // Optional web-search step before planner. With a seed image, prefer
+  // the model's image-derived queries over the decide-search default
+  // (the default would search for the upload's filename / placeholder
+  // topic, returning irrelevant results).
+  let sources = [];
+  if (seedDescription?.search_queries?.length && webSearchEnabled !== false) {
+    broadcast(canvas, {
+      type: SseEvents.SEARCH_STARTED, canvasId: canvas.id, jobId,
+      queries: seedDescription.search_queries,
+    });
+    try {
+      sources = await searchWeb({
+        queries: seedDescription.search_queries,
+        perQueryMax: 5,
+      });
+    } catch (e) {
+      log.warn('searchWeb (seed) failed:', e?.message);
+    }
+    broadcast(canvas, {
+      type: SseEvents.SEARCH_DONE, canvasId: canvas.id, jobId,
+      queries: seedDescription.search_queries,
+      sourceCount: sources.length,
+    });
+  } else {
+    sources = await decideAndSearch({
+      canvas, jobId,
+      topic: effectiveSubject,
+      path: parentNode?.path ?? [],
+      currentLabel: currentLabel ?? '',
+      depth,
+      intent: parentNode ? 'drilldown' : 'root',
+      webSearchEnabled,
+    });
+  }
 
   let plannerJson;
   try {
     plannerJson = await plannerCall({
-      topic: canvas.topic,
+      topic: effectiveSubject,
       path: parentNode?.path ?? [],
       currentLabel: currentLabel ?? '',
       depth,
       maxDepth: 99,
       sources,
       seedImagePath,
+      seedDescription,
     });
   } catch (e) {
     broadcast(canvas, {
@@ -188,6 +248,11 @@ async function buildAndRegisterNode({
     web_search_used: webSearchEnabled !== false,
     // Persist the upload path so future debugging / re-renders can find it.
     ...(seedImagePath ? { seed_image: seedImagePath } : {}),
+    // Snapshot of the click context that produced this node, so a
+    // Regenerate request can replay the exact same parent + click point
+    // + user-typed label + seed-image triple. Captured here for child
+    // nodes; root nodes have parent_hash=null + no click_xy.
+    ...(genInputs ? { gen_inputs: genInputs } : {}),
     path,
     style_tag: 'isometric-illustration',
   };
@@ -200,6 +265,7 @@ async function buildAndRegisterNode({
       canvasId: canvas.id, hash,
       title: plannerJson.title, imagePrompt: plannerJson.image_prompt,
       seedImagePath,
+      seedDescription,
     });
   } catch (e) {
     broadcast(canvas, {
@@ -252,6 +318,25 @@ async function buildAndRegisterNode({
   await registerNode(canvas.id, node);
   await touchLastRun(canvas.id);
 
+  // Keep the canvas's gallery-displayed topic in sync with the planner's
+  // root-node title. Two cases need this:
+  //   1. Image-only uploads — canvas was created with sentinel '__pending__'.
+  //   2. Image + user topic — the planner's inferred subject is usually
+  //      more specific than the user's loose topic, and a mismatch between
+  //      the gallery card title and the canvas's actual node title is
+  //      confusing. Sync only on the FIRST root build (when canvas.topic
+  //      is still '__pending__' OR when this is a brand-new canvas with
+  //      a seed image) — subsequent regenerates leave the topic alone so
+  //      the user's curated rename isn't blown away.
+  if (!parentNode && plannerJson.title) {
+    const isPending = canvas.topic === '__pending__';
+    const isFirstRootForSeed = !!seedImagePath && !canvas.__rootTitled;
+    if (isPending || isFirstRootForSeed) {
+      await updateCanvasTopic(canvas.id, plannerJson.title);
+      canvas.__rootTitled = true;
+    }
+  }
+
   try {
     await recordNode({
       canvasId: canvas.id, hash,
@@ -294,6 +379,17 @@ export async function expandFromClick(canvas, args = {}) {
   const jobId = args.jobId || nanoid(8);
   const { parentNode, clickXY, webSearchEnabled, seedImagePath, userLabel } = args;
   if (!parentNode || !Array.isArray(clickXY)) throw new Error('parentNode and clickXY required');
+
+  // Snapshot the original generation inputs so a future Regenerate can
+  // replay the exact same context (seed image path, user-typed label,
+  // click position on the host parent). Stored on the child node JSON
+  // as `gen_inputs`.
+  const genInputs = {
+    parent_hash: parentNode.hash,
+    click_xy: [Number(clickXY[0]) || 0, Number(clickXY[1]) || 0],
+    user_label: userLabel ?? null,
+    seed_image: seedImagePath ?? null,
+  };
 
   // Spatial dedup: if there's already a hotspot near this click, jump to its child.
   const SPATIAL_THRESHOLD = 0.06;
@@ -404,6 +500,7 @@ export async function expandFromClick(canvas, args = {}) {
     hashSeed: labelOut.label,
     webSearchEnabled,
     seedImagePath,
+    genInputs,
   });
 
   // 4) Link child on parent's hotspot — re-read inside the lock to avoid

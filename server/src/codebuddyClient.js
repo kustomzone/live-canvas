@@ -273,21 +273,35 @@ export async function callImageGen({
   imagePrompt,
   outputDir,
   size = config.imageSize,
+  seedImagePath = null,
   timeoutMs = config.imageTimeoutMs,
   onEvent,
 }) {
-  // Build a single-turn user message that asks codebuddy to call ImageGen.
-  // Note: ImageGen tool only accepts `output_dir`, not `output_path`. The tool
-  // picks its own filename. We capture that filename from the tool_result event.
-  const userMessage = [
-    'Use the ImageGen tool exactly once with the parameters below via DeferExecuteTool.',
-    'After the tool returns, reply with a single word "OK" and nothing else.',
-    '',
-    'Tool name: ImageGen',
-    `prompt: ${imagePrompt}`,
-    `size: ${size}`,
-    `output_dir: ${outputDir}`,
-  ].join('\n');
+  // Build a single-turn user message that asks codebuddy to call either
+  // ImageEdit (when a seed image is attached, so the source's composition
+  // and subject carry over) or ImageGen (text-to-image, no seed).
+  // Both tools accept output_dir + return their actual filename via
+  // tool_result; we capture it from the SSE event.
+  const userMessage = seedImagePath
+    ? [
+        'Use the ImageEdit tool exactly once with the parameters below via DeferExecuteTool.',
+        'After the tool returns, reply with a single word "OK" and nothing else.',
+        '',
+        'Tool name: ImageEdit',
+        `prompt: ${imagePrompt}`,
+        `image: ${seedImagePath}`,
+        `size: ${size}`,
+        `output_dir: ${outputDir}`,
+      ].join('\n')
+    : [
+        'Use the ImageGen tool exactly once with the parameters below via DeferExecuteTool.',
+        'After the tool returns, reply with a single word "OK" and nothing else.',
+        '',
+        'Tool name: ImageGen',
+        `prompt: ${imagePrompt}`,
+        `size: ${size}`,
+        `output_dir: ${outputDir}`,
+      ].join('\n');
 
   // Captured by onEvent: the path the tool actually wrote.
   let capturedPath = null;
@@ -314,13 +328,15 @@ export async function callImageGen({
             let evt;
             try { evt = JSON.parse(line); } catch { return; }
             if (onEvent) { try { onEvent(evt); } catch {} }
-            // Look for tool_result with image_gen_tool_result payload
+            // Look for tool_result with image-tool result payload (both
+            // ImageGen and ImageEdit emit a similar shape — `type` differs
+            // but `images[].localPath` is consistent).
             if (evt?.type === 'user' && Array.isArray(evt?.message?.content)) {
               for (const c of evt.message.content) {
                 if (c?.type !== 'tool_result') continue;
                 // First try the structured rawResponse on _meta
                 const raw = c?._meta?.rawResponse;
-                if (raw?.type === 'image_gen_tool_result' && Array.isArray(raw.images)) {
+                if (raw && /image_(gen|edit)_tool_result/.test(String(raw.type)) && Array.isArray(raw.images)) {
                   const local = raw.images.find((i) => i?.localPath)?.localPath;
                   if (local) { capturedPath = local; return; }
                 }
@@ -330,7 +346,7 @@ export async function callImageGen({
                   if (item?.type !== 'text' || typeof item.text !== 'string') continue;
                   try {
                     const j = JSON.parse(item.text);
-                    if (j?.type === 'image_gen_tool_result' && Array.isArray(j.images)) {
+                    if (j && /image_(gen|edit)_tool_result/.test(String(j.type)) && Array.isArray(j.images)) {
                       const local = j.images.find((i) => i?.localPath)?.localPath;
                       if (local) { capturedPath = local; return; }
                     }

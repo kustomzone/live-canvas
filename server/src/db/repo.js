@@ -82,13 +82,49 @@ export async function listHotspotsForParent(canvasId, parentHash) {
   return Hotspot.findAll({ where: { canvasId, parentHash }, order: [['createdAt', 'ASC']] });
 }
 
-export async function listCanvasesFromDb({ limit, offset } = {}) {
+export async function listCanvasesFromDb({ limit, offset, lastCanvasId } = {}) {
   const { Canvas } = models();
-  const opts = { order: [['lastRunAt', 'DESC']] };
+  // Stable order: createdAt DESC, then canvasId DESC as a tiebreak (so two
+  // rows with identical createdAt still have a deterministic order across
+  // pages — the cursor below uses this as the keyset comparison).
+  const order = [['createdAt', 'DESC'], ['canvasId', 'DESC']];
+
+  // Cursor mode: if lastCanvasId is given AND we can find the row, return
+  // the next page after that cursor (createdAt, canvasId) keyset. This is
+  // immune to insertions during paging — a new canvas that lands at the
+  // top doesn't shift the cursor's view of the rest.
+  if (typeof lastCanvasId === 'string' && lastCanvasId) {
+    const cursor = await Canvas.findOne({ where: { canvasId: lastCanvasId } });
+    if (cursor) {
+      const rows = await Canvas.findAll({
+        where: {
+          [Op.or]: [
+            { createdAt: { [Op.lt]: cursor.createdAt } },
+            {
+              createdAt: cursor.createdAt,
+              canvasId: { [Op.lt]: cursor.canvasId },
+            },
+          ],
+        },
+        order,
+        ...(typeof limit === 'number' && limit > 0 ? { limit } : {}),
+      });
+      return rows.map(rowToDto);
+    }
+    // Cursor row no longer exists (e.g. server restart after the row was
+    // deleted) — fall through to offset-based pagination so the client
+    // still gets a sensible response.
+  }
+
+  const opts = { order };
   if (typeof limit === 'number' && limit > 0) opts.limit = limit;
   if (typeof offset === 'number' && offset > 0) opts.offset = offset;
   const rows = await Canvas.findAll(opts);
-  return rows.map((r) => ({
+  return rows.map(rowToDto);
+}
+
+function rowToDto(r) {
+  return {
     canvasId: r.canvasId,
     topic: r.topic,
     slug: r.slug,
@@ -98,7 +134,7 @@ export async function listCanvasesFromDb({ limit, offset } = {}) {
     nodeCount: r.nodeCount,
     created_at: r.createdAt?.toISOString() ?? null,
     last_run_at: r.lastRunAt?.toISOString() ?? null,
-  }));
+  };
 }
 
 export async function countCanvases() {

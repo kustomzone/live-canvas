@@ -40,21 +40,31 @@ async function statBigEnough(p, minBytes = 512) {
  *   5. If every real provider fails, the always-on `svg` provider produces a
  *      placeholder. The pipeline never returns without a file.
  */
-export async function generateImage({ canvasId, hash, title, imagePrompt, seedImagePath = null, onEvent }) {
+export async function generateImage({ canvasId, hash, title, imagePrompt, seedImagePath = null, seedDescription = null, onEvent }) {
   const targetPng = paths.imagePath(canvasId, hash, 'png');
   const dir = path.dirname(targetPng);
   await fs.mkdir(dir, { recursive: true });
 
   const suffix = await getStyleSuffix();
   // When a seed image is attached, prepend an explicit instruction to do
-  // an image-to-image edit rather than text-to-image. Vision-capable
-  // models invoke their ImageEdit tool when they see the @-reference;
-  // other providers fall back to text-only generation but the seed-aware
-  // planner has already baked preservation requirements into imagePrompt.
-  const finalPrompt = (seedImagePath
-    ? `Image-to-image edit of @${seedImagePath} — preserve the source's subject, composition, and zone layout exactly; only restyle and add diagram annotations described below.\n\n`
-    : ''
-  ) + imagePrompt + suffix;
+  // an image-to-image edit. Vision-capable providers invoke their
+  // ImageEdit tool when they see the @-reference; text-to-image providers
+  // ignore the path but get a vivid textual description of the subject
+  // (lifted by describeSeedImage) so they can still reconstruct the
+  // subject faithfully instead of re-imagining it from scratch.
+  let prefix = '';
+  if (seedImagePath) {
+    prefix += `Image-to-image edit of @${seedImagePath} — preserve the source's subject, composition, and zone layout exactly; only restyle and add diagram annotations described below.\n\n`;
+    if (seedDescription?.subject) {
+      prefix += `Subject (from the source): ${seedDescription.subject}.\n`;
+      if (seedDescription.description) prefix += `Source description: ${seedDescription.description}\n`;
+      if (seedDescription.key_features?.length) {
+        prefix += `Key features to preserve: ${seedDescription.key_features.join('; ')}.\n`;
+      }
+      prefix += '\n';
+    }
+  }
+  const finalPrompt = prefix + imagePrompt + suffix;
 
   const reasons = [];
   for (const provider of chain()) {

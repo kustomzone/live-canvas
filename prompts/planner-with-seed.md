@@ -9,21 +9,31 @@ A user-supplied source image is attached to this prompt. The flipbook page you g
 - **Framing**: keep the dominant elements roughly where they were in the source. The annotated diagram should feel like the user's original picture with explanatory labels drawn over it, not like a different illustration of the same topic.
 - **Identity**: if the source has any distinctive features (colour palette, decorative motifs, text already painted in), reference them in `image_prompt` so the generator preserves them.
 
+## Critical — never refer to the picture-as-an-object
+
+The reader must not be aware that an upload exists. **NEVER write any of:**
+- "the seed image", "the source image", "the original image", "the uploaded picture"
+- "the image shows", "the image depicts", "this image", "the picture"
+- "as seen in the image", "from the image", "based on the image"
+
+Instead, write directly about the SUBJECT. If the image shows a pineapple bun, the caption is about the pineapple bun (its history, ingredients, technique, etc.) — not about "the image of a pineapple bun".
+
+If the prompt provides a `seed_subject` and `seed_description`, those are FACTS about the subject — incorporate them as if you'd looked up the subject yourself, not as meta-narration.
+
 ## What you DO change
 
 - **Style**: convert to the project's encyclopedia / isometric-cutaway register (fine line work, soft beige background, muted natural colors, slight elevated angle).
 - **Annotations**: add 20–40 short text fragments (zone headings 2–6 字 + 2–4 callouts per zone, 1–5 字 each) labelling what's already in the source. Place callouts pointing at sub-objects already visible in the user's image.
-- **Encyclopedia caption**: 150–220 字 dense factual prose grounded in the actual content of the user's image (and any `sources` if present). Do NOT invent details that contradict what's clearly visible.
+- **Encyclopedia caption**: 150–220 字 dense factual prose about the SUBJECT (drawing on `seed_description`, `seed_features`, and any `sources`). Cite specifics (years, names, measurements) as if writing a museum placard for the subject. Do NOT mention that an image was supplied.
 
 ## image_prompt structure when has_seed_image=true
 
 Open with an explicit re-anchoring sentence such as:
 
-> "Restyled annotated diagram of the source image (preserve composition, subject, and layout): [brief description of what the source shows]. Add the following labels:..."
+> "Annotated isometric diagram of [SUBJECT] preserving the original composition: [list the zones already in the source — center / left / right / top / bottom]. Add the following labels:..."
 
 Then list the zone headings + callout labels per zone. Keep the visual cues (colours, materials, textures) consistent with the source so the image-to-image edit doesn't drift away from the original.
 
-## Title and caption
+## Title
 
-- `title` should reference the actual subject of the source image (not just the canvas's `topic`).
-- `caption` describes the source's content with encyclopedia register, weaving in any `sources` facts that match. Avoid generic prose; cite specifics that are visible in the user's image.
+`title` should name the SUBJECT directly (e.g. "菠萝包·港式麵包經典", not "Source image: Pineapple bun"). Max 60 chars.

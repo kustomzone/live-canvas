@@ -2,7 +2,7 @@ import { useCallback, useEffect, useRef, useState } from 'react';
 import styles from '../styles/Gallery.module.css';
 import type { GalleryEntry } from '../state/types';
 import { listCanvasesPage } from '../lib/api';
-import { useLang, t, format } from '../lib/i18n';
+import { useLang, t, format, displayTopic } from '../lib/i18n';
 import type { Lang } from '../lib/i18n';
 
 type Props = {
@@ -50,7 +50,7 @@ export function Gallery({ onOpen, refreshKey }: Props) {
     setHasMore(true);
     setError(null);
     setLoading(true);
-    listCanvasesPage(PAGE_SIZE, 0, ctrl.signal)
+    listCanvasesPage(PAGE_SIZE, 0, null, ctrl.signal)
       .then((page) => {
         if (ctrl.signal.aborted) return;
         setEntries(page.items);
@@ -73,7 +73,14 @@ export function Gallery({ onOpen, refreshKey }: Props) {
     if (loadingMore || loading || !hasMore) return;
     setLoadingMore(true);
     try {
-      const page = await listCanvasesPage(PAGE_SIZE, entries.length);
+      // Cursor-based: pass the last item we already have as lastCanvasId.
+      // Server keysets after that cursor's (createdAt, canvasId) so a
+      // canvas inserted at the top mid-paging doesn't shift our window.
+      // offset is still passed as a fallback for when the cursor row is
+      // missing (e.g. deleted between pages).
+      const last = entries[entries.length - 1];
+      const lastId = last?.canvasId ?? null;
+      const page = await listCanvasesPage(PAGE_SIZE, entries.length, lastId);
       // Guard against duplicate IDs in case of race / overlapping fetches.
       setEntries((prev) => {
         const seen = new Set(prev.map((e) => e.canvasId));
@@ -90,7 +97,7 @@ export function Gallery({ onOpen, refreshKey }: Props) {
     } finally {
       setLoadingMore(false);
     }
-  }, [entries.length, hasMore, loading, loadingMore]);
+  }, [entries, hasMore, loading, loadingMore]);
 
   // Bind IO to the sentinel. We use a callback ref so the observer is
   // attached/re-attached as the sentinel mounts (initial load) and remains
@@ -141,21 +148,22 @@ export function Gallery({ onOpen, refreshKey }: Props) {
           <div className={styles.grid}>
             {entries.map((e) => {
               const nodeKey = e.nodeCount === 1 ? 'gallery.nodes.one' : 'gallery.nodes.many';
+              const shownTopic = displayTopic(e.topic, lang);
               return (
                 <button
                   key={e.canvasId}
                   type="button"
                   className={styles.card}
                   onClick={() => onOpen(e.canvasId)}
-                  title={e.topic}
+                  title={shownTopic}
                 >
                   {e.coverImage ? (
-                    <img className={styles.cover} src={e.coverImage} alt={e.topic} draggable={false} />
+                    <img className={styles.cover} src={e.coverImage} alt={shownTopic} draggable={false} />
                   ) : (
                     <div className={styles.coverPlaceholder}>{t('gallery.cover.generating', lang)}</div>
                   )}
                   <div className={styles.body}>
-                    <div className={styles.cardTitle}>{e.topic}</div>
+                    <div className={styles.cardTitle}>{shownTopic}</div>
                     <div className={styles.cardMeta}>
                       <span>{format(t(nodeKey, lang), { n: e.nodeCount })}</span>
                       <span>{formatRelativeTime(e.last_run_at, lang)}</span>

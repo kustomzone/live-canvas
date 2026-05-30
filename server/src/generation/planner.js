@@ -16,7 +16,7 @@ export function validatePlannerOutput(raw) {
   };
 }
 
-export async function callPlanner({ topic, path = [], currentLabel = '', depth = 0, maxDepth = 99, sources = [], seedImagePath = null }) {
+export async function callPlanner({ topic, path = [], currentLabel = '', depth = 0, maxDepth = 99, sources = [], seedImagePath = null, seedDescription = null }) {
   const { system, planner } = await loadPrompts();
   // When a seed image is attached, layer in the image-extend prompt
   // addendum which forces preservation of the user's content/composition.
@@ -37,6 +37,13 @@ export async function callPlanner({ topic, path = [], currentLabel = '', depth =
       title: s.title, url: s.url, snippet: s.snippet, source: s.source,
     })),
     has_seed_image: !!seedImagePath,
+    // The describe-first step's structured read of what's actually
+    // pictured. The planner's caption/title MUST be about this subject,
+    // never about "the seed image" as a meta-object. When absent (stub
+    // mode or describe failed), the planner falls back to topic.
+    seed_subject: seedDescription?.subject || null,
+    seed_description: seedDescription?.description || null,
+    seed_features: seedDescription?.key_features || null,
   };
   const parts = [system, '', plannerBody, ''];
   if (seedImagePath) {
@@ -44,9 +51,25 @@ export async function callPlanner({ topic, path = [], currentLabel = '', depth =
       '## Seed image',
       `@${seedImagePath}`,
       '',
-      'A user-supplied source image is attached above. Treat it as the canonical visual content. Your job is to PRESERVE its subject, composition, and zone layout, only restyling to the encyclopedia look and adding 20–40 short text annotations OVER the existing scene.',
-      '',
     );
+    if (seedDescription?.subject) {
+      parts.push(
+        `## What the image actually shows`,
+        `Subject: ${seedDescription.subject}`,
+        seedDescription.description ? `Description: ${seedDescription.description}` : '',
+        seedDescription.key_features?.length
+          ? `Key features: ${seedDescription.key_features.join('; ')}`
+          : '',
+        '',
+        'Your title, caption, and image_prompt must describe THIS SUBJECT — the actual thing pictured. NEVER write meta-references like "the seed image", "the source image", "the picture shows", "this image depicts". The reader must not be aware an upload exists; they should just see an annotated encyclopedia page about the subject.',
+        '',
+      );
+    } else {
+      parts.push(
+        'A user-supplied source image is attached above. Treat it as the canonical visual content. Your job is to PRESERVE its subject, composition, and zone layout, only restyling to the encyclopedia look and adding 20–40 short text annotations OVER the existing scene. Title and caption must describe the SUBJECT pictured (not the image-as-an-object).',
+        '',
+      );
+    }
   }
   parts.push(
     '## Inputs (JSON)',

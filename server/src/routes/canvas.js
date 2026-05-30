@@ -10,12 +10,17 @@ export const canvasRouter = express.Router();
 canvasRouter.get('/', async (req, res) => {
   // Pagination — `limit` opts into the paginated shape `{items,total,hasMore}`.
   // Without `limit` the response stays a flat array (back-compat).
+  // Cursor: lastCanvasId pulls the page after that row's createdAt+canvasId
+  // keyset; offset is the fallback when the cursor row is missing or absent.
   const rawLimit = req.query?.limit;
   const rawOffset = req.query?.offset;
+  const lastCanvasId = req.query?.lastCanvasId
+    ? String(req.query.lastCanvasId).slice(0, 64)
+    : undefined;
   if (rawLimit !== undefined) {
     const limit = Math.max(1, Math.min(100, Number(rawLimit) || 24));
     const offset = Math.max(0, Number(rawOffset) || 0);
-    const page = await listCanvases({ limit, offset });
+    const page = await listCanvases({ limit, offset, lastCanvasId });
     return res.json(page);
   }
   const list = await listCanvases();
@@ -50,14 +55,17 @@ canvasRouter.post('/upload', uploadMemory.single('image'), async (req, res) => {
   const topicRaw = (req.body?.topic ?? '').toString();
   const topic = topicRaw.trim();
   // Topic is optional when an image is supplied — but we still need a
-  // string to seed the canvas slug, so fall back to a placeholder.
+  // string to seed the canvas slug, so fall back to a sentinel that the
+  // client localises into "内容生成中… / Content generating…". The
+  // describe-first step will replace this with the inferred subject as
+  // soon as the planner runs.
   const file = req.file;
   if (!topic && !file) {
     return res.status(400).json({ error: 'topic_or_image_required' });
   }
   const webSearchEnabled = req.body?.webSearch !== '0' && req.body?.webSearch !== false;
   try {
-    const finalTopic = topic || (file?.originalname?.replace(/\.[^.]+$/, '') || 'Untitled');
+    const finalTopic = topic || '__pending__';
     const runtime = await createCanvas({ topic: finalTopic });
     let seedImagePath = null;
     if (file) {

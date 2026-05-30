@@ -1,7 +1,7 @@
 import { useEffect, useRef, useState } from 'react';
 import styles from '../styles/TopBar.module.css';
 import type { Node } from '../state/types';
-import { useLang, t } from '../lib/i18n';
+import { useLang, t, displayTopic } from '../lib/i18n';
 import { Icon } from './Icon';
 import { selectionFromClipboard, selectionFromFileList, type ImageSelection } from '../lib/imageUpload';
 
@@ -20,6 +20,7 @@ type Props = {
   onToggleLabels: () => void;
   onToggleWebSearch: () => void;
   onToggleComposeOnClick: () => void;
+  onRegenerate?: () => void;
   // Attachment for new-canvas creation. Picked / pasted in the address bar.
   attachment: ImageSelection | null;
   onAttachmentChange: (sel: ImageSelection | null) => void;
@@ -36,7 +37,7 @@ export function TopBar(props: Props) {
   const {
     view, topic, currentNode, draftTopic, onDraftTopicChange, onSubmitTopic,
     onBackToGallery, onJumpBreadcrumb, onShare, onToggleFullscreen, onToggleChrome,
-    onToggleLabels, onToggleWebSearch, onToggleComposeOnClick,
+    onToggleLabels, onToggleWebSearch, onToggleComposeOnClick, onRegenerate,
     attachment, onAttachmentChange,
     fullscreen, showChrome, showLabels, webSearch, composeOnClick, readOnly, busy,
   } = props;
@@ -137,6 +138,7 @@ export function TopBar(props: Props) {
           <div className={styles.breadcrumb} aria-label="Path">
             {path.map((p, i) => {
               const isLast = i === path.length - 1;
+              const shown = displayTopic(p.title, lang);
               return (
                 <span key={p.hash} className={styles.crumbWrap}>
                   {i > 0 && <span className={styles.crumbSep}>›</span>}
@@ -145,9 +147,9 @@ export function TopBar(props: Props) {
                     className={`${styles.crumb} ${isLast ? styles.crumbCurrent : ''}`}
                     onClick={() => !isLast && onJumpBreadcrumb(p.hash)}
                     disabled={isLast}
-                    title={p.title}
+                    title={shown}
                   >
-                    {p.title}
+                    {shown}
                   </button>
                 </span>
               );
@@ -156,7 +158,7 @@ export function TopBar(props: Props) {
         )}
 
         {view === 'canvas' && !currentNode && topic && (
-          <span className={styles.crumb}>{topic}</span>
+          <span className={styles.crumb}>{displayTopic(topic, lang)}</span>
         )}
 
         {view === 'gallery' && (
@@ -205,6 +207,7 @@ export function TopBar(props: Props) {
           onToggleWebSearch={!readOnly ? onToggleWebSearch : undefined}
           onToggleLabels={view === 'canvas' ? onToggleLabels : undefined}
           onToggleComposeOnClick={view === 'canvas' && !readOnly ? onToggleComposeOnClick : undefined}
+          onRegenerate={view === 'canvas' && !readOnly && currentNode ? onRegenerate : undefined}
           webSearch={webSearch}
           showLabels={showLabels}
           composeOnClick={composeOnClick}
@@ -222,6 +225,7 @@ type MoreMenuProps = {
   onToggleWebSearch?: () => void;
   onToggleLabels?: () => void;
   onToggleComposeOnClick?: () => void;
+  onRegenerate?: () => void;
   webSearch: boolean;
   showLabels: boolean;
   composeOnClick: boolean;
@@ -229,7 +233,7 @@ type MoreMenuProps = {
 
 function MoreMenu({
   lang, setLang,
-  onToggleWebSearch, onToggleLabels, onToggleComposeOnClick,
+  onToggleWebSearch, onToggleLabels, onToggleComposeOnClick, onRegenerate,
   webSearch, showLabels, composeOnClick,
 }: MoreMenuProps) {
   const [open, setOpen] = useState(false);
@@ -264,6 +268,20 @@ function MoreMenu({
       ><Icon name="more" size={14} /></button>
       {open && (
         <div className={styles.moreMenu} role="menu">
+          {onRegenerate && (
+            <>
+              <button
+                type="button"
+                className={styles.moreItem}
+                role="menuitem"
+                onClick={() => { onRegenerate(); setOpen(false); }}
+              >
+                <Icon name="regenerate" size={14} />
+                <span className={styles.moreItemLabel}>{t('topbar.regenerate', lang)}</span>
+              </button>
+              <div className={styles.moreSep} aria-hidden />
+            </>
+          )}
           {onToggleComposeOnClick && (
             <button
               type="button"
@@ -272,7 +290,9 @@ function MoreMenu({
               aria-checked={composeOnClick}
               onClick={() => { onToggleComposeOnClick(); setOpen(false); }}
             >
-              <Icon name={composeOnClick ? 'image-plus' : 'submit'} size={14} />
+              {/* Icon stays constant — on/off is shown by the row's tint
+                  + ◆ marker, not by swapping glyphs. */}
+              <Icon name="long-press" size={14} />
               <span className={styles.moreItemLabel}>{t('topbar.compose-on-click', lang)}</span>
               <span className={styles.moreItemState} aria-hidden>
                 {composeOnClick ? <Icon name="current" size={10} /> : null}
@@ -287,7 +307,7 @@ function MoreMenu({
               aria-checked={webSearch}
               onClick={() => { onToggleWebSearch(); setOpen(false); }}
             >
-              <Icon name={webSearch ? 'web-on' : 'web-off'} size={14} />
+              <Icon name="web-on" size={14} />
               <span className={styles.moreItemLabel}>{t('topbar.web', lang)}</span>
               <span className={styles.moreItemState} aria-hidden>
                 {webSearch ? <Icon name="current" size={10} /> : null}
@@ -302,7 +322,7 @@ function MoreMenu({
               aria-checked={showLabels}
               onClick={() => { onToggleLabels(); setOpen(false); }}
             >
-              <Icon name={showLabels ? 'tag-on' : 'tag-off'} size={14} />
+              <Icon name="tag-on" size={14} />
               <span className={styles.moreItemLabel}>{t('topbar.labels', lang)}</span>
               <span className={styles.moreItemState} aria-hidden>
                 {showLabels ? <Icon name="current" size={10} /> : null}

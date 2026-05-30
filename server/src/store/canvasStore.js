@@ -71,16 +71,18 @@ export async function createCanvas({ topic, branches = 5 }) {
   return runtime;
 }
 
-export async function listCanvases({ limit, offset } = {}) {
+export async function listCanvases({ limit, offset, lastCanvasId } = {}) {
   await ensureCanvasesRoot();
-  // Read from DB (kept in sync with disk by hydrate on boot + register hooks)
-  const items = await listCanvasesFromDb({ limit, offset });
+  const items = await listCanvasesFromDb({ limit, offset, lastCanvasId });
   // Caller may want pagination metadata when limit is set; otherwise just
   // return the array (back-compat with non-paginated callers).
   if (typeof limit === 'number') {
     const total = await countCanvases();
-    const consumed = (offset ?? 0) + items.length;
-    return { items, total, hasMore: consumed < total };
+    // hasMore is true when we filled the page exactly — there *might* be
+    // more behind the cursor. False when we got fewer than `limit` rows
+    // (definitely the last page).
+    const hasMore = items.length === limit;
+    return { items, total, hasMore };
   }
   return items;
 }
@@ -114,4 +116,32 @@ export async function touchLastRun(id) {
   } catch { /* ignore */ }
   // Also bump DB
   try { await touchCanvas(id); } catch { /* ignore */ }
+}
+
+// When a canvas was created with a sentinel topic ('__pending__' for
+// image-only uploads), patch the canvas's manifest + DB row + in-memory
+// runtime to the real subject once the planner has inferred it.
+export async function updateCanvasTopic(id, topic) {
+  if (!topic || typeof topic !== 'string') return;
+  const trimmed = topic.trim();
+  if (!trimmed) return;
+  try {
+    const raw = await fs.readFile(paths.manifestPath(id), 'utf8');
+    const m = JSON.parse(raw);
+    m.topic = trimmed;
+    await writeJsonAtomic(paths.manifestPath(id), m);
+  } catch { /* ignore */ }
+  // Patch the in-memory runtime so /api/canvas/:id/manifest and the
+  // SSE subject line stay consistent without a server restart.
+  const rt = runtimes.get(id);
+  if (rt) rt.topic = trimmed;
+  // Also update the tree's stored topic so reload from disk picks it up.
+  try {
+    const treeRaw = await fs.readFile(paths.treePath(id), 'utf8');
+    const tree = JSON.parse(treeRaw);
+    tree.topic = trimmed;
+    await writeJsonAtomic(paths.treePath(id), tree);
+  } catch { /* ignore */ }
+  // DB topic — best-effort; falls back to what hydrate does on next boot.
+  try { await touchCanvas(id, { topic: trimmed }); } catch { /* ignore */ }
 }

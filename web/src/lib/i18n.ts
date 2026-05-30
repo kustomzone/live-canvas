@@ -99,9 +99,16 @@ export const messages: Catalogue = {
   // Item labels in the More menu — pure noun phrases. The on/off state is
   // conveyed by the row's icon + checked styling, not by a trailing hint.
   'topbar.web': { zh: '联网搜索', en: 'Web search' },
-  'topbar.compose-on-click': { zh: '点击弹出输入框', en: 'Compose on click' },
+  'topbar.compose-on-click': { zh: '长按输入', en: 'Long-press input' },
   'topbar.labels': { zh: '热点标签', en: 'Hotspot labels' },
+  'topbar.regenerate': { zh: '重新生成当前画布', en: 'Regenerate this canvas' },
   'topbar.more': { zh: '更多', en: 'More' },
+
+  // Sentinel topic shown while a canvas created from an image-only upload
+  // is still being titled by the planner. Server records '__pending__';
+  // client maps it to a friendly localised string in topbar / breadcrumb /
+  // gallery.
+  'topic.pending': { zh: '内容生成中…', en: 'Content generating…' },
 
   // Canvas
   'canvas.loading': { zh: '正在生成…', en: 'Generating canvas…' },
@@ -130,6 +137,11 @@ export const messages: Catalogue = {
   'confirm.delete.confirm': { zh: '删除', en: 'Delete' },
   'confirm.delete.cancel': { zh: '取消', en: 'Cancel' },
 
+  // Confirm modal — node regenerate
+  'confirm.regen.title': { zh: '确认重新生成?', en: 'Regenerate this canvas?' },
+  'confirm.regen.confirm': { zh: '重新生成', en: 'Regenerate' },
+  'confirm.regen.cancel': { zh: '取消', en: 'Cancel' },
+
   // Sources / catalog badges
   'sources.heading': { zh: '参考来源', en: 'References' },
   'tree.heading': { zh: '目录', en: 'Catalog' },
@@ -140,6 +152,7 @@ export const messages: Catalogue = {
   'toast.create.failed': { zh: '创建失败', en: 'Create failed' },
   'toast.delete.failed': { zh: '删除失败', en: 'Delete failed' },
   'toast.deleted': { zh: '已删除', en: 'Deleted' },
+  'toast.regenerating': { zh: '已重新加入生成队列', en: 'Re-queued for generation' },
   'toast.share.copied': { zh: '分享链接已复制', en: 'Share link copied' },
   'toast.share.fallback': { zh: '分享链接', en: 'Share link' },
   'toast.share.failed': { zh: '分享失败', en: 'Share failed' },
@@ -177,4 +190,13 @@ export function t(key: keyof typeof messages, lang: Lang = current): string {
 // string already localised.
 export function format(template: string, vars: Record<string, string | number>): string {
   return template.replace(/\{(\w+)\}/g, (_, k) => (k in vars ? String(vars[k]) : `{${k}}`));
+}
+
+// Server uses '__pending__' as a sentinel topic when an image-only canvas
+// hasn't been titled yet by the planner. Translate to a friendly localised
+// string at the boundary so no UI ever shows the raw sentinel.
+export function displayTopic(raw: string | null | undefined, lang: Lang = current): string {
+  if (!raw) return '';
+  if (raw === '__pending__') return t('topic.pending', lang);
+  return raw;
 }

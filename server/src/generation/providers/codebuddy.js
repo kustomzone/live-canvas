@@ -6,7 +6,7 @@ export default {
   enabled(config) {
     return !!config.enableCodebuddy;
   },
-  async generate({ imagePrompt, outputDir, size, onEvent }) {
-    return callImageGen({ imagePrompt, outputDir, size, onEvent });
+  async generate({ imagePrompt, outputDir, size, seedImagePath, onEvent }) {
+    return callImageGen({ imagePrompt, outputDir, size, seedImagePath, onEvent });
   },
 };

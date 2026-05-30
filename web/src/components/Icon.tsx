@@ -18,10 +18,12 @@ import {
   ChevronRight,    // › breadcrumb separator
   Diamond,         // ◆ current-row marker
   Loader2,         // generic spinner
-  Paperclip,       // 📎 attach image
-  MoreHorizontal,  // ⋯ more / overflow menu
-  CornerDownLeft,  // ⏎ submit / enter
-  ImagePlus,       // image-with-plus alt for click composer
+  Paperclip,         // 📎 attach image
+  MoreHorizontal,    // ⋯ more / overflow menu
+  CornerDownLeft,    // ⏎ submit / enter
+  ImagePlus,         // image-with-plus alt for click composer
+  RotateCcw,         // ↻ regenerate / re-roll
+  MousePointerClick, // 🖱 long-press / compose-on-click toggle
 } from 'lucide-react';
 import type { LucideProps } from 'lucide-react';
 
@@ -47,6 +49,8 @@ const REGISTRY = {
   more: MoreHorizontal,
   submit: CornerDownLeft,
   'image-plus': ImagePlus,
+  regenerate: RotateCcw,
+  'long-press': MousePointerClick,
 } as const;
 
 export type IconName = keyof typeof REGISTRY;
