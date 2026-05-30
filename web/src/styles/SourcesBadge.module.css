@@ -6,6 +6,28 @@
   vertical-align: middle;
 }
 
+/* Always-rendered hover bridge on the wrap itself. See TreeBadge for the
+   detailed rationale: the popover's own ::before bridge can't help on the
+   first hover because display:none also kills the pseudo-element. This
+   strip on the wrap fills the gap between badge bottom and popover top
+   so the cursor's first downward motion stays "inside .wrap" through the
+   render frame where setOpen(true) commits. */
+.wrap::after {
+  content: '';
+  position: absolute;
+  top: 100%;
+  left: -8px;
+  right: -8px;
+  height: 18px;
+  background: transparent;
+  pointer-events: none;
+}
+
+.wrap:hover::after,
+.wrap:focus-within::after {
+  pointer-events: auto;
+}
+
 .badge {
   display: inline-flex;
   align-items: center;

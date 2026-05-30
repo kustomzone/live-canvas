@@ -6,6 +6,29 @@
   vertical-align: middle;
 }
 
+/* Always-rendered hover bridge on the wrap itself. Even when the popover
+   is hidden, this 18px-tall transparent strip sits below the badge so the
+   cursor's first downward motion stays "inside .wrap" and doesn't fire
+   onMouseLeave → scheduleClose before the popover has had a render frame
+   to mount. The strip is only ACTIVE when the wrap is hovered (or its
+   popover is open) so it never blocks pointer events on the rest of the
+   topbar. */
+.wrap::after {
+  content: '';
+  position: absolute;
+  top: 100%;
+  left: -8px;
+  right: -8px;
+  height: 18px;
+  background: transparent;
+  pointer-events: none;
+}
+
+.wrap:hover::after,
+.wrap:focus-within::after {
+  pointer-events: auto;
+}
+
 .badge {
   display: inline-flex;
   align-items: center;
