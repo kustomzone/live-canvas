@@ -16,6 +16,7 @@ import {
   BookOpen,        // 📚 sources
   ListTree,        // 🌳 catalog / tree
   ChevronRight,    // › breadcrumb separator
+  ChevronLeft,     // ‹ back
   Diamond,         // ◆ current-row marker
   Loader2,         // generic spinner
   Paperclip,         // 📎 attach image
@@ -48,6 +49,7 @@ const REGISTRY = {
   sources: BookOpen,
   catalog: ListTree,
   chevron: ChevronRight,
+  'chevron-left': ChevronLeft,
   current: Diamond,
   spinner: Loader2,
   attach: Paperclip,

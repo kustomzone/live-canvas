@@ -60,6 +60,10 @@ export type Node = {
   path: { hash: string; title: string }[];
   generated_at: string;
   style_tag: string;
+  // Present (='generating') while the node is still being produced: it's
+  // persisted early under its final id so it's linkable + streams its
+  // title/caption/image_prompt via PLANNER_DELTA. Cleared once complete.
+  status?: 'generating';
 };export type Tree = {
   topic: string;
   topic_slug: string;
@@ -67,7 +71,7 @@ export type Node = {
   branches: number;
   style: string;
   orientation?: 'landscape' | 'portrait';
-  nodes: Record<string, { title: string; depth: number; parent: string | null; children: string[] }>;
+  nodes: Record<string, { title: string; depth: number; parent: string | null; children: string[]; status?: 'generating' }>;
 };
 
 // SSE event payloads
@@ -76,6 +80,7 @@ export type SseEvent =
   | { type: 'search_started'; canvasId: string; jobId: string; queries: string[] }
   | { type: 'search_done'; canvasId: string; jobId: string; queries: string[]; sourceCount: number }
   | { type: 'planner_done'; canvasId: string; jobId: string; hash: string; node: Omit<Node, 'image' | 'generated_at'> }
+  | { type: 'planner_delta'; canvasId: string; jobId: string; hash?: string; title?: string; caption?: string; image_prompt?: string; attempt?: number; maxAttempts?: number }
   | { type: 'image_started'; canvasId: string; jobId: string; hash: string }
   | { type: 'image_ready'; canvasId: string; jobId: string; hash: string; imageUrl: string; fallback: boolean }
   | { type: 'variants_ready'; canvasId: string; jobId: string; hash: string; variants: string[] }
@@ -139,6 +144,21 @@ export type PendingClick = {
   // this instead of the static phase chip.
   messageKey?: string;
   messageEn?: string;
+  // Streaming planner output (typewriter). Accumulated partial text pushed by
+  // PLANNER_DELTA as the planner model emits its JSON answer. title/caption
+  // feed the bubble + node header; imagePrompt feeds the image-placeholder
+  // "drafting the scene…" text while the picture is still generating.
+  title?: string;
+  caption?: string;
+  imagePrompt?: string;
+  // Planner retry progress. When the planner fails and re-rolls, the streamed
+  // text restarts from scratch (typewriter resets); these counters let the UI
+  // show "2/3" so a restart looks intentional rather than glitchy.
+  attempt?: number;
+  maxAttempts?: number;
+  // Set once PLANNER_DONE assigns a hash — lets the user click the pending
+  // bubble to navigate into the (still-generating) node's placeholder page.
+  hash?: string;
 };
 
 export type AppState = {

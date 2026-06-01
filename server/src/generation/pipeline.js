@@ -7,7 +7,7 @@
 //     and appends a hotspot to the parent.
 import { nanoid } from 'nanoid';
 import { config, resolveImageSize } from '../config.js';
-import { hashNode } from '../lib/hash.js';
+import { hashNode, uniqueNodeId } from '../lib/hash.js';
 import {
   nodeExists, readNode, registerNode, writeNode, countNodes,
 } from '../store/nodeStore.js';
@@ -23,6 +23,7 @@ import { searchWeb } from './searchWeb.js';
 import { runOcr } from './ocr.js';
 import { generateImageVariants, probeImageSize } from './imageVariants.js';
 import { isHashCancelled } from './cancelRegistry.js';
+import { deleteNodeCascade } from './deleteNode.js';
 import { describeSeedImage } from './describeSeed.js';
 import { repairTopic } from './repairTopic.js';
 import { touchLastRun, updateCanvasTopic, deleteCanvas } from '../store/canvasStore.js';
@@ -92,6 +93,29 @@ export function clearClickJobInFlight(canvasId, jobId) {
 export function listClickJobsInFlight(canvasId) {
   const out = [];
   for (const v of clickJobsInFlight.values()) {
+    if (v.canvasId === canvasId) out.push(v);
+  }
+  return out;
+}
+
+// Latest streamed planner snapshot per in-flight job, so a client that
+// reconnects mid-generation can be re-sent the current title/caption/
+// image_prompt and resume its typewriter / image-placeholder UI. PLANNER_DELTA
+// itself is high-frequency and NOT put in the SSE replay ring buffer — this
+// snapshot is the recovery mechanism (replayed once on attach via resume).
+const plannerSnapshots = new Map();
+export function setPlannerSnapshot(canvasId, jobId, snap) {
+  plannerSnapshots.set(jobKey(canvasId, jobId), { canvasId, jobId, ...snap });
+}
+export function getPlannerSnapshot(canvasId, jobId) {
+  return plannerSnapshots.get(jobKey(canvasId, jobId)) ?? null;
+}
+export function clearPlannerSnapshot(canvasId, jobId) {
+  plannerSnapshots.delete(jobKey(canvasId, jobId));
+}
+export function listPlannerSnapshots(canvasId) {
+  const out = [];
+  for (const v of plannerSnapshots.values()) {
     if (v.canvasId === canvasId) out.push(v);
   }
   return out;
@@ -175,6 +199,82 @@ function plannerCall(args) {
   }));
 }
 
+// Build a throttled planner-stream callback: stores the latest snapshot (for
+// reconnect recovery) and broadcasts PLANNER_DELTA at most every ~80ms. Only
+// emits fields that changed since the last push to keep frames small.
+//
+// nodeId (the node's final id, known up-front for click expansions) lets us
+// (a) tag each PLANNER_DELTA with `hash` so ANY viewer — not just the
+// originating tab — can map deltas onto state.nodes[nodeId], and (b) persist
+// the partial title/caption/image_prompt to the node JSON on a coarse cadence
+// so a cross-device / refreshed client reading the node gets the latest
+// snapshot before SSE resumes. baseSkeleton is the generating node's JSON
+// (sans the streamed fields); pass null for the root path (no early node).
+function makePlannerStreamHandler(canvas, jobId, nodeId = null, baseSkeleton = null) {
+  let last = { title: '', caption: '', image_prompt: '' };
+  let lastAttempt = 1;
+  let lastSentAt = 0;
+  let lastDiskAt = 0;
+  let pending = null;
+  let timer = null;
+  const persistToDisk = (snap) => {
+    if (!nodeId || !baseSkeleton) return;
+    const node = {
+      ...baseSkeleton,
+      title: snap.title,
+      caption: snap.caption,
+      image_prompt: snap.image_prompt,
+      status: 'generating',
+    };
+    // Fire-and-forget; a failed snapshot write is non-fatal (the next one
+    // retries) and must never block the 80ms broadcast cadence.
+    writeNode(canvas.id, node).catch((e) => log.warn(`[snapshot] ${canvas.id}/${nodeId}: ${e?.message}`));
+  };
+  const flush = () => {
+    timer = null;
+    if (!pending) return;
+    const snap = pending; pending = null;
+    lastSentAt = Date.now();
+    setPlannerSnapshot(canvas.id, jobId, { ...snap, nodeId });
+    const frame = { type: SseEvents.PLANNER_DELTA, canvasId: canvas.id, jobId };
+    if (nodeId) frame.hash = nodeId;
+    // A new attempt (planner failed and re-rolled) restarts the streamed
+    // answer from scratch — force-send all fields so the client's typewriter
+    // resets cleanly instead of diffing against the superseded attempt's text.
+    const attemptChanged = snap.attempt !== lastAttempt;
+    if (attemptChanged || snap.title !== last.title) frame.title = snap.title;
+    if (attemptChanged || snap.caption !== last.caption) frame.caption = snap.caption;
+    if (attemptChanged || snap.image_prompt !== last.image_prompt) frame.image_prompt = snap.image_prompt;
+    // Always carry the retry counters so the UI can show "2/3".
+    frame.attempt = snap.attempt;
+    frame.maxAttempts = snap.maxAttempts;
+    last = { title: snap.title, caption: snap.caption, image_prompt: snap.image_prompt };
+    lastAttempt = snap.attempt;
+    if (frame.title !== undefined || frame.caption !== undefined || frame.image_prompt !== undefined || attemptChanged) {
+      try { broadcast(canvas, frame); } catch { /* logged in hub */ }
+    }
+    // Coarse disk persist (~700ms) so cross-device GET sees recent progress.
+    if (Date.now() - lastDiskAt >= 700 || attemptChanged) {
+      lastDiskAt = Date.now();
+      persistToDisk(snap);
+    }
+  };
+  return (fields) => {
+    pending = {
+      title: fields.title ?? '',
+      caption: fields.caption ?? '',
+      image_prompt: fields.image_prompt ?? '',
+      attempt: fields.attempt ?? 1,
+      maxAttempts: fields.maxAttempts ?? 1,
+    };
+    // Flush retry transitions immediately (don't let the 80ms throttle hide a
+    // reset) so the typewriter visibly restarts the moment a re-roll begins.
+    const since = Date.now() - lastSentAt;
+    if (pending.attempt !== lastAttempt || since >= 80) flush();
+    else if (!timer) timer = setTimeout(flush, 80 - since);
+  };
+}
+
 function decideCall(args) {
   if (config.enableCodebuddy) return callDecideSearch(args);
   return Promise.resolve(stubDecideSearch({
@@ -256,6 +356,12 @@ async function buildAndRegisterNode({
   // as `gen_inputs`.
   genInputs = null,
   lang = 'zh',
+  // The node's FINAL id, minted up-front by expandFromClick so the node is
+  // persisted + linkable while it's still generating. When set, we skip the
+  // content-hash computation (the node already exists on disk under this id)
+  // and stream/persist against it. Root generation passes null → falls back
+  // to the content hash and the cache-check path.
+  nodeId = null,
 }) {
   const depth = parentNode ? (parentNode.depth ?? 0) + 1 : 0;
   const startedAt = Date.now();
@@ -369,6 +475,28 @@ async function buildAndRegisterNode({
   genLog(jobId, 'planner', `topic="${effectiveSubject}" sources=${sources.length}`);
   emitPhaseMessage(canvas, jobId, 'phase.planner', 'Drafting title, caption and scene…');
   let plannerJson;
+  // Base skeleton for the EARLY-PERSISTED generating node (click expansions
+  // only — nodeId is set). The stream handler writes this to disk with the
+  // partial title/caption/image_prompt + status:'generating' on a coarse
+  // cadence, so a cross-device / refreshed client GET sees recent progress.
+  const baseSkeleton = nodeId ? {
+    hash: nodeId,
+    depth,
+    parent: parentNode?.hash ?? null,
+    hotspots: [],
+    sources: sources.map((s) => ({ title: s.title, url: s.url, snippet: s.snippet, source: s.source })),
+    web_search_used: webSearchEnabled !== false,
+    ...(seedImagePath ? { seed_image: seedImagePath } : {}),
+    ...(seedImagePath ? { seed_image_url: seedImageUrlFor(canvas.id, seedImagePath) } : {}),
+    ...(genInputs ? { gen_inputs: genInputs } : {}),
+    path: buildPath(parentNode, nodeId, ''),
+    style_tag: 'isometric-illustration',
+  } : null;
+  // Streamed-field handler: pushes PLANNER_DELTA (throttled) + keeps a
+  // snapshot for reconnect recovery + persists to the node JSON. Only the
+  // primary attempt streams; the seed-refusal / topic-rewrite retries below
+  // run non-streaming (rare path).
+  const onFields = makePlannerStreamHandler(canvas, jobId, nodeId, baseSkeleton);
   // When a seed image trips a content-policy refusal we drop it and retry
   // text-only; these track the effective (possibly seed-dropped) values.
   let effectiveSeedPath = seedImagePath;
@@ -385,6 +513,7 @@ async function buildAndRegisterNode({
       seedImagePath,
       seedDescription,
       lang,
+      onFields,
     });
     genLog(jobId, 'planner',
       `→ "${plannerJson.title}" (caption ${plannerJson.caption.length}c, image_prompt ${plannerJson.image_prompt.length}c, ${Date.now() - tPlanner}ms)`);
@@ -530,14 +659,26 @@ async function buildAndRegisterNode({
   seedDescription = effectiveSeedDescription;
 
   const parentHash = parentNode?.hash ?? '';
-  const hash = hashNode(parentHash, hashSeed, plannerJson.image_prompt);
+  // Click expansions arrive with a pre-minted nodeId (the node already exists
+  // on disk as a generating skeleton). Root generation has no nodeId → derive
+  // the deterministic content hash and run the cache-check below.
+  const hash = nodeId ?? hashNode(parentHash, hashSeed, plannerJson.image_prompt);
 
-  // Cache check
-  if (await nodeExists(canvas.id, hash)) {
+  // Cache check — only meaningful for the content-hash (root) path. A click
+  // expansion's nodeId is unique per click, so it never "already exists" as a
+  // finished node; sibling dedup happens earlier in expandFromClick.
+  if (!nodeId && await nodeExists(canvas.id, hash)) {
     genLog(jobId, 'cache-hit', `${hash} — same hashSeed → existing node`);
     const cached = await readNode(canvas.id, hash);
     broadcast(canvas, { type: SseEvents.NODE_READY, canvasId: canvas.id, jobId, hash, node: cached });
     return { node: cached, cacheHit: true };
+  }
+
+  // The generating node may have been deleted (user cancelled the hotspot)
+  // while the planner was still streaming — bail before re-persisting it.
+  if (nodeId && isHashCancelled(canvas.id, nodeId)) {
+    genLog(jobId, 'cancelled', `${nodeId} cancelled during planner — aborting`);
+    return { node: null, cacheHit: false, cancelled: true };
   }
 
   const path = buildPath(parentNode, hash, plannerJson.title);
@@ -568,6 +709,9 @@ async function buildAndRegisterNode({
     style_tag: 'isometric-illustration',
   };
   broadcast(canvas, { type: SseEvents.PLANNER_DONE, canvasId: canvas.id, jobId, hash, node: skeleton });
+  // Planner finished — the skeleton (with hash) is now the source of truth;
+  // drop the streaming snapshot so reconnects resume from the real node.
+  clearPlannerSnapshot(canvas.id, jobId);
 
   const tImage = Date.now();
   genLog(jobId, 'image', `${seedImagePath ? 'image-edit' : 'text-to-image'} hash=${hash}`);
@@ -671,6 +815,14 @@ async function buildAndRegisterNode({
     text_layer: [],
     ...(imageW && imageH ? { image_w: imageW, image_h: imageH } : {}),
   };
+  // Final cancellation gate: if the generating node was deleted while the
+  // image was being produced, don't re-create it on disk / resurrect it on
+  // the client. (skeleton has no `status`, so registerNode also clears the
+  // tree's generating flag for surviving nodes.)
+  if (nodeId && isHashCancelled(canvas.id, hash)) {
+    genLog(jobId, 'cancelled', `${hash} cancelled before final register — aborting`);
+    return { node: null, cacheHit: false, cancelled: true };
+  }
   await registerNode(canvas.id, node);
   await touchLastRun(canvas.id);
 
@@ -799,6 +951,7 @@ export async function generateRootNode(canvas, args = {}) {
     // Clear the in-flight marker on both success and failure so a later
     // reconnect doesn't replay a planning_started for a job that's done.
     if (canvas.rootInFlight?.jobId === jobId) canvas.rootInFlight = null;
+    clearPlannerSnapshot(canvas.id, jobId);
   }
 }
 
@@ -870,7 +1023,8 @@ export async function expandFromClick(canvas, args = {}) {
 
   // Resume short-circuit: reuse the existing pending hotspot's fields as
   // labelOut, skip dedup + append entirely, jump straight to building the
-  // child and linking it back into the existing slot.
+  // child under its EXISTING id (the generating node already persisted on
+  // disk) and re-broadcast on completion.
   if (isResume) {
     const existing = (parentNode.hotspots ?? [])[resumeHotspotIndex];
     if (!existing) {
@@ -878,7 +1032,12 @@ export async function expandFromClick(canvas, args = {}) {
       broadcast(canvas, { type: SseEvents.DONE, canvasId: canvas.id, jobId, hash: parentNode.hash, cacheHit: false });
       return null;
     }
-    const { node: child, cacheHit } = await buildAndRegisterNode({
+    // The hotspot's next_hash IS the generating node's id (set at creation).
+    // Reuse it so the rebuild keeps the same linkable id (no orphaning, no
+    // broken URLs). Legacy interrupted nodes may have next_hash null — fall
+    // back to minting a fresh id in that case.
+    const reuseId = existing.next_hash || uniqueNodeId(parentNode.hash, existing.label, jobId);
+    const { node: child, cacheHit, cancelled } = await buildAndRegisterNode({
       canvas, parentNode, jobId,
       currentLabel: existing.label,
       hashSeed: existing.label,
@@ -886,15 +1045,24 @@ export async function expandFromClick(canvas, args = {}) {
       seedImagePath,
       genInputs,
       lang,
+      nodeId: reuseId,
     });
-    const parentAfterLink = await withParentLock(canvas.id, parentNode.hash, async () => {
-      const fresh = await readNode(canvas.id, parentNode.hash);
-      if (fresh.hotspots[resumeHotspotIndex]) {
-        fresh.hotspots[resumeHotspotIndex].next_hash = child.hash;
-        await writeNode(canvas.id, fresh);
-      }
-      return fresh;
-    });
+    if (cancelled || !child) {
+      broadcast(canvas, { type: SseEvents.DONE, canvasId: canvas.id, jobId, hash: reuseId, cacheHit: false });
+      return null;
+    }
+    // next_hash already equals child.hash; only re-link if it was null (legacy).
+    if (!existing.next_hash) {
+      await withParentLock(canvas.id, parentNode.hash, async () => {
+        const fresh = await readNode(canvas.id, parentNode.hash);
+        if (fresh.hotspots[resumeHotspotIndex]) {
+          fresh.hotspots[resumeHotspotIndex].next_hash = child.hash;
+          await writeNode(canvas.id, fresh);
+        }
+        return fresh;
+      });
+    }
+    const parentAfterLink = await readNode(canvas.id, parentNode.hash);
     broadcast(canvas, {
       type: SseEvents.NODE_READY, canvasId: canvas.id, jobId,
       hash: parentAfterLink.hash, node: parentAfterLink,
@@ -990,18 +1158,47 @@ export async function expandFromClick(canvas, args = {}) {
       clickXY: [Number(clickXY?.[0]) || 0, Number(clickXY?.[1]) || 0],
     });
   }
+  // 2) Mint the child's FINAL id up-front and persist a GENERATING node so it
+  //    is immediately linkable (?n=<id>) from any browser/device, streams its
+  //    title/caption/image_prompt on its own page, and shows a spinner in the
+  //    catalog. The id is unique per click (parent+label+jobId+now), so there
+  //    is no temp-id → real-hash migration: this id is the node's identity for
+  //    life. The parent hotspot is linked to it from the start.
+  const childId = uniqueNodeId(parentNode.hash, labelOut.label, jobId);
+  const generatingSkeleton = {
+    hash: childId,
+    depth: (parentNode.depth ?? 0) + 1,
+    parent: parentNode.hash,
+    title: '',
+    caption: '',
+    image_prompt: '',
+    hotspots: [],
+    status: 'generating',
+    web_search_used: webSearchEnabled !== false,
+    ...(seedImagePath ? { seed_image: seedImagePath, seed_image_url: seedImageUrlFor(canvas.id, seedImagePath) } : {}),
+    ...(genInputs ? { gen_inputs: genInputs } : {}),
+    path: buildPath(parentNode, childId, ''),
+    style_tag: 'isometric-illustration',
+  };
+  // registerNode writes the node JSON + tree.nodes[childId] with
+  // status:'generating' (TreeBadge spinner) and links it under the parent's
+  // children[].
+  await registerNode(canvas.id, generatingSkeleton);
+  // Tell connected clients about the generating child so its catalog row +
+  // spinner appear live and it's immediately navigable (its page reads the
+  // persisted skeleton, then streams via PLANNER_DELTA).
+  broadcast(canvas, { type: SseEvents.NODE_READY, canvasId: canvas.id, jobId, hash: childId, node: generatingSkeleton });
+
   const newHotspot = {
     label: labelOut.label,
     anchor_xy: labelOut.anchor_xy,
     leader_xy: labelOut.leader_xy,
     next_prompt: labelOut.next_prompt,
-    next_hash: null, // filled after child is generated
+    next_hash: childId, // linked from the start (node is generating)
   };
-  let myHotspotIndex;
   const parentAfterAppend = await withParentLock(canvas.id, parentNode.hash, async () => {
     const fresh = await readNode(canvas.id, parentNode.hash);
     fresh.hotspots = [...(fresh.hotspots ?? []), newHotspot];
-    myHotspotIndex = fresh.hotspots.length - 1;
     await writeNode(canvas.id, fresh);
     return fresh;
   });
@@ -1010,37 +1207,44 @@ export async function expandFromClick(canvas, args = {}) {
     hash: parentAfterAppend.hash, node: parentAfterAppend,
   });
 
-  // 3) Build child node
-  const { node: child, cacheHit } = await buildAndRegisterNode({
-    canvas, parentNode: parentAfterAppend, jobId,
-    currentLabel: labelOut.label,
-    hashSeed: labelOut.label,
-    webSearchEnabled,
-    seedImagePath,
-    genInputs,
-    lang,
-  });
+  // 3) Build child node under the pre-minted id (planner streams onto the
+  //    generating node + persists snapshots; on completion the node is
+  //    re-registered with image + status cleared). On hard failure delete the
+  //    generating node (node JSON + tree entry + parent hotspot) and broadcast
+  //    node_deleted so all viewers prune it, then rethrow for the enqueue
+  //    catch to toast the originating tab.
+  let child; let cacheHit; let cancelled;
+  try {
+    ({ node: child, cacheHit, cancelled } = await buildAndRegisterNode({
+      canvas, parentNode: parentAfterAppend, jobId,
+      currentLabel: labelOut.label,
+      hashSeed: labelOut.label,
+      webSearchEnabled,
+      seedImagePath,
+      genInputs,
+      lang,
+      nodeId: childId,
+    }));
+  } catch (e) {
+    try { await deleteNodeCascade(canvas, childId); }
+    catch (delErr) { log.warn(`[gen ${jobId}] cleanup of generating node ${childId} failed: ${delErr?.message}`); }
+    throw e;
+  }
 
-  // 4) Link child on parent's hotspot — re-read inside the lock to avoid
-  //    overwriting a sibling click's append between step 2 and now.
-  const parentAfterLink = await withParentLock(canvas.id, parentNode.hash, async () => {
-    const fresh = await readNode(canvas.id, parentNode.hash);
-    if (fresh.hotspots[myHotspotIndex]) {
-      fresh.hotspots[myHotspotIndex].next_hash = child.hash;
-      await writeNode(canvas.id, fresh);
-    }
-    return fresh;
-  });
-  broadcast(canvas, {
-    type: SseEvents.NODE_READY, canvasId: canvas.id, jobId,
-    hash: parentAfterLink.hash, node: parentAfterLink,
-  });
+  // Cancelled mid-generation (user deleted the hotspot) — the deletion path
+  // already pruned node/tree/hotspot + broadcast node_deleted. Just stop.
+  if (cancelled || !child) {
+    broadcast(canvas, { type: SseEvents.DONE, canvasId: canvas.id, jobId, hash: childId, cacheHit: false });
+    return null;
+  }
 
-  // 5) Index hotspot in DB (for spatial dedup on future clicks)
+  // 4) Index hotspot in DB (for spatial dedup on future clicks). The parent
+  //    hotspot's next_hash already equals child.hash (=== childId) — no
+  //    re-link needed.
   try {
     await recordHotspot({
       canvasId: canvas.id,
-      parentHash: parentAfterLink.hash,
+      parentHash: parentNode.hash,
       childHash: child.hash,
       label: newHotspot.label,
       anchorXY: newHotspot.anchor_xy,
@@ -1172,6 +1376,7 @@ export function enqueueClickExpansion(canvas, { parentNode, clickXY, webSearchEn
       // expandFromClick once the label was inferred) for this job.
       clearClickInFlightByJob(jobId);
       clickJobsInFlight.delete(jKey);
+      clearPlannerSnapshot(canvas.id, jobId);
     });
   // Surface queue stats so the route can echo them back to the client.
   return {

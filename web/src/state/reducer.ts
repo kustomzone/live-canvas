@@ -225,6 +225,39 @@ function applySse(state: AppState, evt: SseEvent): AppState {
       // "inferring label". Treat both events as a planning sub-phase.
       return state;
 
+    case 'planner_delta': {
+      // Streamed planner text (typewriter). Accumulate the latest partial
+      // title/caption/imagePrompt onto the matching pending click (keyed by
+      // jobId — for the originating tab's bubble) AND, when the event carries
+      // the node's id (hash), onto state.nodes[hash] so ANY viewer sitting on
+      // the generating node's own page sees the live typewriter. Only
+      // overwrite a field when the event carries it (server sends only
+      // changed fields, except on retry where it force-resends all).
+      let nodes = state.nodes;
+      if (evt.hash && state.nodes[evt.hash]) {
+        const n = state.nodes[evt.hash];
+        const updated: Node = { ...n };
+        if (evt.title !== undefined) updated.title = evt.title;
+        if (evt.caption !== undefined) updated.caption = evt.caption;
+        if (evt.image_prompt !== undefined) updated.image_prompt = evt.image_prompt;
+        nodes = { ...state.nodes, [evt.hash]: updated };
+      }
+      const cur = state.pendingClicks[evt.jobId];
+      if (!cur) return nodes === state.nodes ? state : { ...state, nodes };
+      const next: PendingClick = { ...cur };
+      // Retry detection: when the attempt counter advances (planner failed and
+      // re-rolled), the streamed answer starts over. The server force-resends
+      // all fields on the first delta of the new attempt, so just adopting the
+      // carried fields naturally restarts the typewriter; we also record the
+      // counters so the UI can render "2/3".
+      if (evt.attempt !== undefined) next.attempt = evt.attempt;
+      if (evt.maxAttempts !== undefined) next.maxAttempts = evt.maxAttempts;
+      if (evt.title !== undefined) next.title = evt.title;
+      if (evt.caption !== undefined) next.caption = evt.caption;
+      if (evt.image_prompt !== undefined) next.imagePrompt = evt.image_prompt;
+      return { ...state, nodes, pendingClicks: { ...state.pendingClicks, [evt.jobId]: next } };
+    }
+
     case 'planner_done': {
       const skel = evt.node as Node;
       const existing = state.nodes[evt.hash];
@@ -237,6 +270,12 @@ function applySse(state: AppState, evt: SseEvent): AppState {
         status: { phase: 'image_loading', jobId: evt.jobId, hash: evt.hash },
       };
       s = setPendingPhase(s, evt.jobId, 'image_loading');
+      // Stamp the now-known hash onto the pending click so the bubble can be
+      // clicked to navigate into the (still image-generating) node's page.
+      const pc = s.pendingClicks[evt.jobId];
+      if (pc && pc.hash !== evt.hash) {
+        s = { ...s, pendingClicks: { ...s.pendingClicks, [evt.jobId]: { ...pc, hash: evt.hash } } };
+      }
       return s;
     }
 
@@ -297,6 +336,9 @@ function applySse(state: AppState, evt: SseEvent): AppState {
           depth: node.depth ?? existing?.depth ?? 0,
           parent: node.parent ?? null,
           children: existing?.children ?? [],
+          // Mirror generating status onto the catalog entry (spinner). A
+          // completed node_ready has no status → the entry is left un-flagged.
+          ...(node.status === 'generating' ? { status: 'generating' as const } : {}),
         };
         // Link into parent's children[] (dedup).
         if (node.parent && tnodes[node.parent]) {

@@ -35,6 +35,12 @@ export async function registerNode(canvasId, node) {
   } else {
     tree.nodes[node.hash].title = node.title;
   }
+  // Mirror the node's generation status onto the tree entry so the catalog
+  // (TreeBadge) can render a spinner for in-progress nodes. Set when the node
+  // carries a status (e.g. 'generating'); cleared once the node completes and
+  // re-registers without one.
+  if (node.status) tree.nodes[node.hash].status = node.status;
+  else delete tree.nodes[node.hash].status;
   if (node.parent === null && tree.root === null) tree.root = node.hash;
   if (node.parent && tree.nodes[node.parent]) {
     const siblings = tree.nodes[node.parent].children;

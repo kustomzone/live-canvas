@@ -12,13 +12,20 @@ type Props = {
   // When provided, a small ✕ appears in the card's top-right on hover.
   // Hidden in preview / read-only mode by simply not passing this prop.
   onDelete?: (index: number) => void;
+  // The linked child node is still generating (persisted early, streaming).
+  // Renders the card as in-progress (dashed + spinner) even though next_hash
+  // is already set.
+  generating?: boolean;
 };
 
 export const HotspotCard = forwardRef<HTMLButtonElement, Props>(function HotspotCard(
-  { hotspot, index, anchor, onClick, onDelete }: Props,
+  { hotspot, index, anchor, onClick, onDelete, generating = false }: Props,
   ref,
 ) {
-  const linked = !!hotspot.next_hash;
+  // A card reads as "linked/complete" only when it points at a FINISHED child.
+  // While the child is still generating we keep the in-progress (spinner +
+  // dashed) treatment so the catalog/canvas don't imply it's done.
+  const linked = !!hotspot.next_hash && !generating;
   const cls = [
     styles.hotspot,
     linked ? styles.linked : styles.pending,

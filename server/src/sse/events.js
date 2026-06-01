@@ -4,6 +4,11 @@ export const SseEvents = Object.freeze({
   SEARCH_STARTED: 'search_started',
   SEARCH_DONE: 'search_done',
   PLANNER_DONE: 'planner_done',
+  // Streaming planner output. Fired repeatedly (throttled) while the planner
+  // model emits its JSON answer, carrying the partial title/caption/
+  // image_prompt extracted so far. Keyed by jobId (hash isn't known until
+  // PLANNER_DONE). Drives the typewriter UI + image-placeholder prompt text.
+  PLANNER_DELTA: 'planner_delta',
   IMAGE_STARTED: 'image_started',
   IMAGE_READY: 'image_ready',
   // Progressive-loading variants (blur/thumb/medium JPEGs) for a node's

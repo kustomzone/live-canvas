@@ -61,6 +61,10 @@ export function Canvas({ canvasId, node, tree, imageLoading, pendingClicks, read
   // Prefer the explicit orientation prop (app state); fall back to the tree
   // for any caller that doesn't pass it.
   const isPortrait = (orientation ?? tree?.orientation) === 'portrait';
+  // A still-generating node (persisted early under its final id). Its
+  // title/caption/image_prompt stream in via PLANNER_DELTA and it has no
+  // image yet — so the stage shows the shimmer + drafting overlay.
+  const isGenerating = node?.status === 'generating';
   // Leader-line SVG viewBox height. The SVG uses preserveAspectRatio="none",
   // so its viewBox height MUST match the stage's real aspect or circles draw
   // as ellipses. Width is always 100; height = 100 / aspect. Landscape 16:9 →
@@ -340,14 +344,16 @@ export function Canvas({ canvasId, node, tree, imageLoading, pendingClicks, read
     <>
       {showChrome && node && (
         <h2 className={styles.title}>
+          {isGenerating && <span className={styles.genChip}><span className={styles.genDot} />{t('preview.generating', lang)}</span>}
           {node.title}
+          {isGenerating && <span className={styles.genCaret} />}
           {node.sources && node.sources.length > 0 && <SourcesBadge sources={node.sources} />}
           {tree && onJumpToHash && (
             <TreeBadge tree={tree} currentHash={node.hash} onJump={onJumpToHash} />
           )}
         </h2>
       )}
-      <div className={styles.stageWrap}>
+      <div className={`${styles.stageWrap} ${fullscreen ? styles.fullscreenWrap : ''}`}>
       <div
         ref={stageRef}
         className={stageClass}
@@ -390,7 +396,19 @@ export function Canvas({ canvasId, node, tree, imageLoading, pendingClicks, read
             <Icon name="zoom-in" size={16} />
           </button>
         )}
-        {(imageLoading || !hasImage) && <div className={styles.shimmer} aria-hidden />}
+        {(imageLoading || !hasImage) && (
+          <div className={styles.shimmer} aria-hidden />
+        )}
+        {/* Image-placeholder prompt text: while the picture is still being
+            generated, show the (possibly still-streaming) image_prompt so the
+            user sees the scene being "drafted" instead of a blank shimmer.
+            Hidden once a real image is present. */}
+        {(imageLoading || !hasImage) && !isSvg && node?.image_prompt && (
+          <div className={styles.draftingOverlay} aria-hidden>
+            <div className={styles.draftingLabel}>{t('canvas.image.drafting', lang)}</div>
+            <div className={styles.draftingText}>{node.image_prompt}</div>
+          </div>
+        )}
 
         {/* Leader lines: card edge to leader point */}
         {node && layouts.length > 0 && (
@@ -429,17 +447,24 @@ export function Canvas({ canvasId, node, tree, imageLoading, pendingClicks, read
 
         {/* Hotspot cards */}
         <div className={styles.hotspots}>
-          {node && layouts.map(({ anchor, idx }) => (
-            <HotspotCard
-              key={idx}
-              ref={(el) => { cardRefs.current[idx] = el; }}
-              hotspot={node.hotspots[idx]}
-              index={idx}
-              anchor={anchor}
-              onClick={onHotspotClick}
-              onDelete={!readOnly ? onHotspotDelete : undefined}
-            />
-          ))}
+          {node && layouts.map(({ anchor, idx }) => {
+            const nh = node.hotspots[idx]?.next_hash;
+            // The linked child may still be generating — surface that so the
+            // card reads as in-progress (dashed + spinner) until it completes.
+            const childGenerating = !!nh && tree?.nodes?.[nh]?.status === 'generating';
+            return (
+              <HotspotCard
+                key={idx}
+                ref={(el) => { cardRefs.current[idx] = el; }}
+                hotspot={node.hotspots[idx]}
+                index={idx}
+                anchor={anchor}
+                generating={childGenerating}
+                onClick={onHotspotClick}
+                onDelete={!readOnly ? onHotspotDelete : undefined}
+              />
+            );
+          })}
         </div>
 
         {/* Long-press progress ring at the cursor while user is holding down.
@@ -470,19 +495,36 @@ export function Canvas({ canvasId, node, tree, imageLoading, pendingClicks, read
               ? localised
               : (p.messageEn || phaseLabel);
           }
+          // Keep the bubble SHORT: just the coarse phase chip (黑底白字).
+          // The streamed title/caption/image_prompt is viewable by clicking
+          // into the node's placeholder page — we don't cram it into the pill.
+          const bubbleText = phaseLabel;
+          // Clickable once the node has a hash (planner_done) to jump into its
+          // page. The generating node is persisted from the start, so its
+          // hotspot card is the primary way in; this bubble is a secondary
+          // affordance for the originating tab.
+          const navHash = p.hash;
+          const canNav = !!navHash && !!onJumpToHash;
+          const clickable = canNav;
           return (
             <div
               key={p.jobId}
-              className={styles.pendingClick}
+              className={`${styles.pendingClick} ${clickable ? styles.pendingClickNav : ''}`}
               style={{
                 left: pct(sx),
                 top: pct(sy),
               }}
-              title={phaseLabel}
+              title={bubbleText}
+              role={clickable ? 'button' : undefined}
+              onPointerDown={clickable ? (e) => e.stopPropagation() : undefined}
+              onClick={clickable ? (e) => {
+                e.stopPropagation();
+                if (canNav && navHash) onJumpToHash(navHash);
+              } : undefined}
             >
               <span className={styles.pendingDot} />
               <span className={styles.pendingLabel}>
-                <span>{phaseLabel}</span>
+                <span>{bubbleText}</span>
               </span>
             </div>
           );

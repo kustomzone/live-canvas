@@ -17,7 +17,7 @@ import fs from 'node:fs/promises';
 import { paths } from '../store/paths.js';
 import { readNode, nodeExists } from '../store/nodeStore.js';
 import { readTree } from '../store/treeStore.js';
-import { enqueueRootGeneration, enqueueClickExpansion, isClickInFlight, getClickInFlight, listClickJobsInFlight } from '../generation/pipeline.js';
+import { enqueueRootGeneration, enqueueClickExpansion, isClickInFlight, getClickInFlight, listClickJobsInFlight, listPlannerSnapshots } from '../generation/pipeline.js';
 import { broadcast } from '../sse/hub.js';
 import { SseEvents } from '../sse/events.js';
 import { log } from '../lib/log.js';
@@ -173,6 +173,28 @@ export async function resumeIncomplete(canvas) {
           hotspotIndex: null,
           label: null,
           clickXY: job.clickXY,
+        });
+      } catch { /* logged in hub */ }
+    }
+
+    // Streaming-planner recovery: a job mid-planner has a live snapshot of the
+    // partial title/caption/image_prompt. Re-send it as PLANNER_DELTA so a
+    // reconnecting client resumes its typewriter / image-placeholder text
+    // exactly where it left off (these high-frequency deltas are NOT in the
+    // SSE replay ring buffer, so this snapshot is the only recovery path).
+    for (const snap of listPlannerSnapshots(canvas.id)) {
+      try {
+        broadcast(canvas, {
+          type: SseEvents.PLANNER_DELTA,
+          canvasId: canvas.id,
+          jobId: snap.jobId,
+          // The generating node's id, so any viewer maps deltas onto it.
+          ...(snap.nodeId ? { hash: snap.nodeId } : {}),
+          title: snap.title,
+          caption: snap.caption,
+          image_prompt: snap.image_prompt,
+          attempt: snap.attempt,
+          maxAttempts: snap.maxAttempts,
         });
       } catch { /* logged in hub */ }
     }

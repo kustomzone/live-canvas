@@ -14,7 +14,7 @@ type Props = {
 
 const CLOSE_DELAY_MS = 320;
 
-type TreeRow = { hash: string; depth: number; title: string; isLast: boolean[]; isCurrent: boolean; onPath: boolean };
+type TreeRow = { hash: string; depth: number; title: string; isLast: boolean[]; isCurrent: boolean; onPath: boolean; generating: boolean };
 
 // Flatten tree.nodes into a render-ready row list (DFS preorder), with each
 // row carrying a per-depth "is this the last sibling at this level" array
@@ -42,6 +42,7 @@ function flattenTree(tree: Tree | null, currentHash: string | null): TreeRow[] {
       isLast,
       isCurrent: hash === currentHash,
       onPath: onPath.has(hash),
+      generating: n.status === 'generating',
     });
     const kids = n.children ?? [];
     kids.forEach((c, i) => walk(c, depth + 1, isLast, i === kids.length - 1));
@@ -99,7 +100,10 @@ export function TreeBadge({ tree, currentHash, onJump }: Props) {
               return last ? '   ' : '│  ';
             })}
           </span>
-          <span className={styles.title}>{r.title || '(untitled)'}</span>
+          <span className={styles.title}>
+            {r.generating && <span className={styles.spinner} aria-hidden />}
+            {r.title || (r.generating ? t('preview.generating', lang) : '(untitled)')}
+          </span>
         </button>
       ))}
     </div>

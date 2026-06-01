@@ -46,6 +46,10 @@ async function fileNonEmpty(p) {
 async function isIncompleteNode(canvasId, hash) {
   const node = await readJsonOrNull(paths.nodePath(canvasId, hash));
   if (!node) return true;
+  // In-progress nodes are intentionally persisted without an image so they
+  // are linkable while generating. They are NOT half-generated garbage —
+  // resume.js re-drives them on the next SSE attach. Keep them.
+  if (node.status === 'generating') return false;
   if (!node.image) return true;
   if (!node.generated_at) return true;
   // Image references a relative path like `images/<hash>.<ext>`.

@@ -327,6 +327,91 @@ export async function callOnce({ prompt, timeoutMs = config.plannerTimeoutMs, ta
   });
 }
 
+// Streaming variant of callOnce. Same JSON-answer contract (returns
+// { raw, parsed }) but drives codebuddy with --output-format stream-json
+// --include-partial-messages so the model's answer text arrives incrementally
+// as `stream_event` lines carrying `content_block_delta` / `text_delta`.
+// `onDelta(fullText, attempt)` is invoked with the accumulated answer text so
+// far on every text chunk — callers can extract partial fields (title/caption)
+// for a typewriter UI. thinking_delta is filtered out (only text_delta counts).
+//
+// On parse/empty/timeout failure it retries (maxAttempts) like callOnce;
+// `onDelta` carries the attempt number so consumers can discard deltas from a
+// superseded earlier attempt. If every attempt fails it throws PlannerError
+// (callers may fall back to non-streaming callOnce).
+export async function callOnceStream({
+  prompt, timeoutMs = config.plannerTimeoutMs, tag = 'llm', maxAttempts = 3, onDelta,
+}) {
+  return sem.run(async () => {
+    let lastErr;
+    let lastStdout = '';
+    let lastStderr = '';
+    let lastExitInfo = null;
+    for (let attempt = 1; attempt <= maxAttempts; attempt++) {
+      try {
+        const finalPrompt = attempt === 1
+          ? prompt
+          : `${prompt}\n\n# IMPORTANT\nReturn JSON ONLY. No prose. No backticks. No commentary. Start your response with { and end with }. Keep the response concise.`;
+        const frame = JSON.stringify({
+          type: 'user',
+          message: { role: 'user', content: finalPrompt },
+        }) + '\n';
+
+        // Accumulated model answer text (text_delta only — not thinking).
+        let answer = '';
+        const { stdout, stderr, exitInfo } = await invokeRunCodebuddy({
+          args: [
+            '--print',
+            '--output-format', 'stream-json',
+            '--input-format', 'stream-json',
+            '--include-partial-messages',
+            '-y',
+          ],
+          stdin: frame,
+          timeoutMs,
+          onStdoutLine: (line) => {
+            let evt;
+            try { evt = JSON.parse(line); } catch { return; }
+            if (evt?.type !== 'stream_event') return;
+            const d = evt.event?.delta;
+            if (d?.type === 'text_delta' && typeof d.text === 'string') {
+              answer += d.text;
+              if (onDelta) { try { onDelta(answer, attempt, maxAttempts); } catch { /* ignore */ } }
+            }
+          },
+        });
+        lastStdout = stdout ?? '';
+        lastStderr = stderr ?? '';
+        lastExitInfo = exitInfo ?? null;
+        // Prefer the accumulated text_delta answer (clean model reply); fall
+        // back to parsing the whole stdout if no deltas were captured (e.g.
+        // an older client that didn't honour --include-partial-messages).
+        const parsed = answer.trim()
+          ? (parseAnswerString(answer) ?? tryParseJson(stdout))
+          : tryParseJson(stdout);
+        if (parsed === undefined) throw new PlannerError('could not parse streamed planner answer');
+        return { raw: stdout, parsed };
+      } catch (e) {
+        lastErr = e;
+        if (e instanceof PlannerRefusalError) {
+          log.warn(`[${tag}] callOnceStream attempt ${attempt}: model refused (${e.message.slice(0, 100)})`);
+          break;
+        }
+        const diag = diagnoseStdout(lastStdout, lastStderr, lastErr);
+        log.warn(
+          `[${tag}] callOnceStream attempt ${attempt}/${maxAttempts} failed: ${e?.message}`
+          + ` | promptLen=${(prompt ?? '').length}`
+          + ` | stdoutLen=${diag.stdoutLen} stderrLen=${(lastStderr || '').length}`
+          + ` | topParse=${diag.topParse} truncated=${diag.truncated}`
+          + (lastExitInfo ? ` | exit=${lastExitInfo.code}/${lastExitInfo.signal ?? '-'}` : ''),
+        );
+      }
+    }
+    if (lastErr instanceof PlannerRefusalError) throw lastErr;
+    throw new PlannerError(`streaming planner failed after retries: ${lastErr?.message}`);
+  });
+}
+
 // Build a compact structured diagnostic for a failed codebuddy call. Helps
 // distinguish the failure modes we actually see in the wild:
 //   - degenerate gibberish: model emitted a long whitespace-free run of

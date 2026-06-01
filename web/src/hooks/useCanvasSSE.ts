@@ -30,7 +30,7 @@ export function useCanvasSSE(canvasId: string | null, onEvent: (evt: SseEvent) =
       const types = [
         'planning_started',
         'search_started', 'search_done',
-        'planner_done',
+        'planner_done', 'planner_delta',
         'image_started', 'image_ready', 'variants_ready',
         'ocr_done',
         'node_ready', 'tree_updated',

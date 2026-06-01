@@ -317,6 +317,10 @@ export default function App() {
     if (!node) return;
     const hot = node.hotspots[index];
     if (!hot) return;
+    // Every hotspot has a next_hash from the start — completed children AND
+    // still-generating ones (the child node is persisted early under its
+    // final id). Navigating into a generating child loads its node page which
+    // shows the streaming typewriter (title/caption/image_prompt) + spinner.
     if (hot.next_hash) {
       const nh = hot.next_hash;
       if (state.nodes[nh]) {

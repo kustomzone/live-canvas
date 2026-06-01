@@ -40,6 +40,10 @@
   aspect-ratio: 9 / 16;
 }
 
+/* Marker class added to stageWrap in fullscreen so mobile portrait rules can
+   exclude the fullscreen case (where the stage must still fit the screen). */
+.fullscreenWrap {}
+
 /* Mobile: on an INTERACTIVE stage, long-press is our drilldown gesture, so
    suppress iOS Safari's long-press text-selection / copy callout across the
    whole stage surface (the image + any text near the press). Read-only /
@@ -50,6 +54,14 @@
     -webkit-touch-callout: none;
     -webkit-user-select: none;
     user-select: none;
+  }
+  /* Mobile portrait: let the 9:16 stage fill the available WIDTH and take its
+     natural tall height instead of being capped by viewport height (which
+     shrinks it and leaves pillarbox whitespace on the sides). The window now
+     scrolls, so a tall stage is fine. Fullscreen keeps the height cap so the
+     whole page still fits the screen. */
+  .stageWrap:not(.fullscreenWrap) .stagePortrait {
+    max-height: none;
   }
 }
 
@@ -149,6 +161,47 @@
   100% { background-position: -200% 0; }
 }
 
+/* Image-placeholder "drafting the scene" overlay: shows the (streaming)
+   image_prompt over the shimmer while the picture generates. Sits above the
+   shimmer (z 1) but below leader lines / hotspots. */
+.draftingOverlay {
+  position: absolute;
+  inset: 0;
+  z-index: 1;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  padding: 7% 9%;
+  overflow: hidden;
+  pointer-events: none;
+  /* Fade the bottom so long prompts dissolve instead of hard-clipping. */
+  -webkit-mask-image: linear-gradient(to bottom, #000 70%, transparent 100%);
+  mask-image: linear-gradient(to bottom, #000 70%, transparent 100%);
+}
+
+.draftingLabel {
+  flex-shrink: 0;
+  font-size: 12px;
+  letter-spacing: 0.04em;
+  color: var(--muted);
+  opacity: 0.85;
+}
+
+.draftingText {
+  font-size: clamp(12px, 1.6vw, 15px);
+  line-height: 1.7;
+  color: #6F6457;
+  opacity: 0.6;
+  white-space: pre-wrap;
+  word-break: break-word;
+  /* A subtle caret-like trailing shimmer could go here; kept simple. */
+}
+
+@media (max-width: 720px) {
+  .draftingText { font-size: 11px; line-height: 1.5; }
+  .draftingLabel { font-size: 10px; }
+}
+
 .leaderSvg {
   position: absolute;
   inset: 0;
@@ -168,6 +221,43 @@
   font-size: 28px;
   font-weight: 600;
   color: var(--ink);
+}
+
+/* "生成中" chip shown before a generating node's (streaming) title. */
+.genChip {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  vertical-align: middle;
+  margin-right: 8px;
+  padding: 2px 9px;
+  border-radius: 999px;
+  font-size: 12px;
+  font-weight: 600;
+  color: var(--muted);
+  background: rgba(31, 31, 31, 0.06);
+}
+.genDot {
+  width: 7px;
+  height: 7px;
+  border-radius: 50%;
+  background: #e0344f;
+  animation: pulse 1.6s ease-out infinite;
+}
+/* Blinking typewriter caret after the streaming title. */
+.genCaret {
+  display: inline-block;
+  width: 2px;
+  height: 0.9em;
+  margin-left: 3px;
+  vertical-align: text-bottom;
+  background: currentColor;
+  opacity: 0.6;
+  animation: genBlink 1s steps(2, start) infinite;
+}
+@keyframes genBlink {
+  0%, 50% { opacity: 0.6; }
+  50.01%, 100% { opacity: 0; }
 }
 
 .caption {
@@ -219,6 +309,14 @@
      point. */
   transform: translateY(-50%);
 }
+
+/* Navigable pending bubble (planner_done assigned a hash): clickable to jump
+   into the still-generating node's placeholder page. */
+.pendingClickNav {
+  pointer-events: auto;
+  cursor: pointer;
+}
+.pendingClickNav:hover .pendingLabel { color: var(--ink); }
 
 .pendingDot {
   width: 14px;

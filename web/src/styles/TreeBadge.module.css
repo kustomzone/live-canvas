@@ -160,6 +160,20 @@
   text-overflow: ellipsis;
 }
 
+/* Inline spinner before a still-generating node's (possibly empty) title. */
+.spinner {
+  display: inline-block;
+  width: 9px;
+  height: 9px;
+  margin-right: 6px;
+  vertical-align: -1px;
+  border-radius: 50%;
+  border: 1.5px solid var(--muted);
+  border-top-color: transparent;
+  animation: treeSpin 0.8s linear infinite;
+}
+@keyframes treeSpin { to { transform: rotate(360deg); } }
+
 @media (max-width: 720px) {
   .popover { min-width: 260px; max-width: 92vw; }
   /* Catalog now opens as a bottom sheet on mobile — give rows comfortable
