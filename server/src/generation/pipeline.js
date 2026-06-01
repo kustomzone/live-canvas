@@ -219,11 +219,19 @@ function makePlannerStreamHandler(canvas, jobId, nodeId = null, baseSkeleton = n
   let timer = null;
   const persistToDisk = (snap) => {
     if (!nodeId || !baseSkeleton) return;
+    // Keep the breadcrumb's last crumb (this node) in sync with the streamed
+    // title — baseSkeleton.path ends with {hash:nodeId, title:''}, so a
+    // refresh-into-generating page would otherwise show an empty final crumb.
+    const path = Array.isArray(baseSkeleton.path) ? baseSkeleton.path.slice() : [];
+    if (path.length && path[path.length - 1]?.hash === nodeId) {
+      path[path.length - 1] = { hash: nodeId, title: snap.title || '' };
+    }
     const node = {
       ...baseSkeleton,
       title: snap.title,
       caption: snap.caption,
       image_prompt: snap.image_prompt,
+      path,
       status: 'generating',
     };
     // Fire-and-forget; a failed snapshot write is non-fatal (the next one

@@ -67,7 +67,9 @@ export function BreadcrumbNav({ path, lang, onJump }: Props) {
   if (!path.length) return null;
 
   const renderCrumb = (p: Crumb, isLast: boolean, withSep: boolean) => {
-    const shown = displayTopic(p.title, lang);
+    // A still-generating leaf may have an empty title (the planner hasn't
+    // streamed it yet) — show a "生成中…" placeholder so the crumb isn't blank.
+    const shown = displayTopic(p.title, lang) || (isLast ? t('preview.generating', lang) : '…');
     return (
       <span key={p.hash} className={styles.crumbWrap}>
         {withSep && <span className={styles.crumbSep}>›</span>}

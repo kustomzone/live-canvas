@@ -237,7 +237,15 @@ function applySse(state: AppState, evt: SseEvent): AppState {
       if (evt.hash && state.nodes[evt.hash]) {
         const n = state.nodes[evt.hash];
         const updated: Node = { ...n };
-        if (evt.title !== undefined) updated.title = evt.title;
+        if (evt.title !== undefined) {
+          updated.title = evt.title;
+          // Keep the breadcrumb's last crumb (this node) in sync with the
+          // streamed title so it isn't blank while generating.
+          if (Array.isArray(n.path) && n.path.length && n.path[n.path.length - 1]?.hash === evt.hash) {
+            updated.path = n.path.slice();
+            updated.path[updated.path.length - 1] = { hash: evt.hash, title: evt.title };
+          }
+        }
         if (evt.caption !== undefined) updated.caption = evt.caption;
         if (evt.image_prompt !== undefined) updated.image_prompt = evt.image_prompt;
         nodes = { ...state.nodes, [evt.hash]: updated };
