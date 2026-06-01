@@ -41,6 +41,9 @@ Most "AI画图" demos stop at one image. This one turns each image into a
   any fragment straight off the picture.
 - 🌳 **Infinite tree of canvases** — every click spawns a child node; the
   whole exploration tree is persisted, shareable, and replayable.
+- ⏳ **Watch it think** — a node is saved and linkable the instant you click,
+  then its title / caption / scene prompt **type out live**; share the link
+  and a friend on another device watches the same stream fill in.
 
 ---
 
@@ -73,17 +76,34 @@ Most "AI画图" demos stop at one image. This one turns each image into a
   backend infers the label, decides whether to web-search, then generates a
   child node. Spatial + semantic dedup means clicking the same region again
   jumps straight in.
+- ⏳ **Live-streaming, linkable generating nodes**: the moment you click, the
+  child node is **persisted under its final id** and its parent hotspot links
+  to it immediately — so it's **shareable / openable on any device while still
+  generating**. Its title, caption and image prompt **type out live**
+  (token-streamed via SSE), the catalog shows a **spinner row**, and a refresh
+  or cross-device open **resumes the stream from the on-disk snapshot**. On
+  failure the half-node is auto-deleted.
+- 🌫️ **Progressive image loading**: every PNG gets blur → thumbnail → medium →
+  full variants (sharp). Gallery cards blur-up, the canvas swaps to full-res
+  when ready — no broken-image flashes, fast first paint.
+- 🖼️ **Portrait & landscape canvases**: pick orientation per canvas (mobile
+  portrait viewports default to portrait); filter the gallery by
+  **All / Landscape / Portrait** with the choice synced to the URL.
 - ⚡ **Per-node parallelism**: up to **4 different spots in parallel per parent**
   (configurable). Each in-flight click streams a phase chip
   (`Inferring label…` → `Searching the web…` → `Generating image…`) on the
   hotspot. Hit the cap and the cursor turns into ⌛.
 - 📖 **Encyclopedia register**: planner produces 150–220 char captions with
   20–40 in-image text fragments — like reading a richly annotated diagram in
-  a children's encyclopedia.
+  a children's encyclopedia. Long captions clamp to 2 lines with a
+  **查看更多 / Show more** toggle.
 - 🌐 **Web-search augmented**: a "decide-then-search" gate asks the LLM whether
   a topic benefits from up-to-date sources. When yes, results are fetched and
   fed into the planner; sources are persisted to disk + DB and rendered as a
   📚 hover badge over the canvas.
+- 🔁 **Resilient SSE**: Last-Event-ID replay + per-job snapshot resume — a
+  dropped connection or page refresh mid-generation reconnects and catches up
+  on everything it missed, including the in-flight typewriter.
 - 🎬 **Scene transitions**: drill-in / drill-out / fade animations make
   navigation feel like a zooming flipbook rather than a page swap.
 - 🔗 **Share as preview**: any canvas → read-only `?s=<token>` URL. Viewers can
@@ -95,8 +115,8 @@ Most "AI画图" demos stop at one image. This one turns each image into a
   with Apple Vision (`zh-Hans` + `en-US`) and overlaid as invisible HTML, so
   users can drag-select and Cmd-C copy any text directly off the picture
   while the painted pixels remain the visual ground truth.
-- 📱 **Mobile responsive**: top bar collapses to icons, single-column gallery,
-  smaller hotspots and pending bubbles.
+- 📱 **Mobile responsive**: sticky top bar that pins on scroll, single-column
+  gallery, pinch-zoom image lightbox, smaller hotspots and pending bubbles.
 
 ---
 
