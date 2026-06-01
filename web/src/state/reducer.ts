@@ -13,11 +13,14 @@ export type Action =
   | { type: 'set_fullscreen'; on: boolean }
   | { type: 'toggle_chrome' }
   | { type: 'toggle_labels' }
+  | { type: 'toggle_edit_mode' }
+  | { type: 'update_hotspot_local'; hash: string; index: number; patch: { label?: string; anchor_xy?: [number, number]; leader_xy?: [number, number] } }
   | { type: 'toggle_web_search' }
   | { type: 'set_orientation'; orientation: 'landscape' | 'portrait' }
   | { type: 'consume_drill_origin' }
   | { type: 'add_toast'; toast: Omit<Toast, 'id'> }
-  | { type: 'remove_toast'; id: number };
+  | { type: 'remove_toast'; id: number }
+  | { type: 'remove_toast_by_tag'; tag: string };
 
 let _toastId = 1;
 
@@ -155,6 +158,26 @@ export function reducer(state: AppState, action: Action): AppState {
     case 'toggle_labels':
       return { ...state, showLabels: !state.showLabels };
 
+    case 'toggle_edit_mode':
+      // Edit mode is meaningless in read-only preview; never enable it there.
+      // Entering edit mode also force-shows labels (you edit the cards).
+      if (state.readOnly) return state;
+      {
+        const next = !state.editMode;
+        return { ...state, editMode: next, showLabels: next ? true : state.showLabels };
+      }
+
+    case 'update_hotspot_local': {
+      // Optimistic local update of a hotspot's label/position (edit mode).
+      // The server PATCH also broadcasts node_ready, but applying it locally
+      // first keeps the drag/rename feeling instant.
+      const n = state.nodes[action.hash];
+      if (!n || !Array.isArray(n.hotspots) || !n.hotspots[action.index]) return state;
+      const hotspots = n.hotspots.map((h, i) =>
+        i === action.index ? { ...h, ...action.patch } : h);
+      return { ...state, nodes: { ...state.nodes, [action.hash]: { ...n, hotspots } } };
+    }
+
     case 'toggle_web_search': {
       const next = !state.webSearch;
       // Persist across page reloads. Per-node history (node.web_search_used)
@@ -183,6 +206,9 @@ export function reducer(state: AppState, action: Action): AppState {
 
     case 'remove_toast':
       return { ...state, toasts: state.toasts.filter((t) => t.id !== action.id) };
+
+    case 'remove_toast_by_tag':
+      return { ...state, toasts: state.toasts.filter((t) => t.tag !== action.tag) };
 
     case 'sse':
       return applySse(state, action.evt);
@@ -250,8 +276,25 @@ function applySse(state: AppState, evt: SseEvent): AppState {
         if (evt.image_prompt !== undefined) updated.image_prompt = evt.image_prompt;
         nodes = { ...state.nodes, [evt.hash]: updated };
       }
+      // Mirror the streamed title into the catalog entry (TreeBadge reads
+      // titles from state.tree.nodes, not state.nodes). Without this the
+      // catalog row stays "生成中" until the final node_ready, even though the
+      // page <h2> already shows the streamed title.
+      let tree = state.tree;
+      if (evt.hash && evt.title !== undefined && tree?.nodes?.[evt.hash]) {
+        tree = {
+          ...tree,
+          nodes: {
+            ...tree.nodes,
+            [evt.hash]: { ...tree.nodes[evt.hash], title: evt.title },
+          },
+        };
+      }
       const cur = state.pendingClicks[evt.jobId];
-      if (!cur) return nodes === state.nodes ? state : { ...state, nodes };
+      if (!cur) {
+        if (nodes === state.nodes && tree === state.tree) return state;
+        return { ...state, nodes, tree };
+      }
       const next: PendingClick = { ...cur };
       // Retry detection: when the attempt counter advances (planner failed and
       // re-rolled), the streamed answer starts over. The server force-resends
@@ -263,7 +306,7 @@ function applySse(state: AppState, evt: SseEvent): AppState {
       if (evt.title !== undefined) next.title = evt.title;
       if (evt.caption !== undefined) next.caption = evt.caption;
       if (evt.image_prompt !== undefined) next.imagePrompt = evt.image_prompt;
-      return { ...state, nodes, pendingClicks: { ...state.pendingClicks, [evt.jobId]: next } };
+      return { ...state, nodes, tree, pendingClicks: { ...state.pendingClicks, [evt.jobId]: next } };
     }
 
     case 'planner_done': {

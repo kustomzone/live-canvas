@@ -29,12 +29,20 @@ type Props = {
   readOnly: boolean;
   showChrome: boolean;
   showLabels: boolean;
+  editMode?: boolean;
   fullscreen: boolean;
   enterMode?: 'drill' | 'up' | 'fade' | 'none';
   originXY?: [number, number]; // 0..1, used as transform-origin for drill enter
   onImageClick: (xy: [number, number]) => void;
   onHotspotClick: (index: number) => void;
   onHotspotDelete?: (index: number) => void;
+  // Edit mode: rename / reposition a hotspot. `patch` carries the changed
+  // fields; `prev` is the pre-edit snapshot for rollback on failure.
+  onHotspotEdit?: (
+    index: number,
+    patch: { label?: string; anchor_xy?: [number, number]; leader_xy?: [number, number] },
+    prev: { label?: string; anchor_xy?: [number, number]; leader_xy?: [number, number] },
+  ) => void;
   onJumpToHash?: (hash: string) => void;
   // Optional inline overlay rendered on top of the stage (e.g. floating
   // click composer panel). Rendered inside the stage so its absolute
@@ -55,7 +63,7 @@ const PHASE_KEY: Record<PendingClick['phase'], 'phase.planning' | 'phase.image' 
   finalizing: 'phase.finalizing',
 };
 
-export function Canvas({ canvasId, node, tree, imageLoading, pendingClicks, readOnly, showChrome, showLabels, fullscreen, enterMode = 'none', originXY, onImageClick, onHotspotClick, onHotspotDelete, onJumpToHash, overlay, onImageRectChange, orientation }: Props) {
+export function Canvas({ canvasId, node, tree, imageLoading, pendingClicks, readOnly, showChrome, showLabels, editMode = false, fullscreen, enterMode = 'none', originXY, onImageClick, onHotspotClick, onHotspotDelete, onHotspotEdit, onJumpToHash, overlay, onImageRectChange, orientation }: Props) {
   const [lang] = useLang();
   const isMobile = useIsMobile();
   // Prefer the explicit orientation prop (app state); fall back to the tree
@@ -73,11 +81,24 @@ export function Canvas({ canvasId, node, tree, imageLoading, pendingClicks, read
   const hasImage = !!node?.image;
   const src = node?.image ? imageUrl(canvasId, node.image) : '';
   const isSvg = src.endsWith('.svg');
+  // "Drafting" = the picture is still being conjured (no image yet, or the
+  // image is loading). While drafting we show the image_prompt overlay and
+  // must NOT surface the long-press hint or the caption's "查看更多" toggle —
+  // there's nothing to drill into yet and the caption is still streaming.
+  const drafting = imageLoading || !hasImage;
   const atCapacity = pendingClicks.length >= MAX_PARALLEL_PER_NODE;
-  const interactive = !readOnly && hasImage && !imageLoading && !atCapacity;
+  // Long-press drilldown is disabled in edit mode — there the gesture is used
+  // to drag hotspots, not to dive into the image.
+  const interactive = !readOnly && !editMode && hasImage && !imageLoading && !atCapacity;
   // Enlarged single-image viewer (download + pinch-zoom). Mobile shows an
   // explicit enlarge button; the lightbox itself works on any viewport.
   const [lightboxOpen, setLightboxOpen] = useState(false);
+
+  // Edit-mode hotspot drag. `drag` holds the index being moved and the live
+  // delta in IMAGE-relative space (so it composes with the stored anchor/
+  // leader xy). Committed to the server on pointer-up.
+  const [drag, setDrag] = useState<{ idx: number; dx: number; dy: number } | null>(null);
+  const dragStartRef = useRef<{ x: number; y: number } | null>(null);
 
   // Long-press tracking. Click became "press and hold for 1 s" — gives users
   // an explicit Are-you-sure moment and prevents accidental drilldown clicks.
@@ -257,13 +278,72 @@ export function Canvas({ canvasId, node, tree, imageLoading, pendingClicks, read
   // transform them into stage-relative space (using imageRect) before
   // running the layout pass, so the cards and leader endpoints line up
   // with the painted picture even when it's letterboxed.
+  //
+  // Edit mode bypasses the collision-avoidance reflow (layOutHotspots) and
+  // renders each card at its exact stored anchor — so dragging is 1:1 and
+  // predictable — plus applies the live drag delta to the card being moved.
+  const editing = editMode && !readOnly;
   const layouts = node && showLabels
-    ? layOutHotspots(node.hotspots.map((h) => {
-        const a: [number, number] = h.anchor_xy ?? [0, 0];
-        const l: [number, number] = h.leader_xy ?? a;
-        return { ...h, anchor_xy: imageToStage(a), leader_xy: imageToStage(l) };
-      }))
+    ? (editing
+        ? node.hotspots.map((h, idx) => {
+            const a: [number, number] = h.anchor_xy ?? [0, 0];
+            const l: [number, number] = h.leader_xy ?? a;
+            const d = drag && drag.idx === idx ? drag : null;
+            const aImg: [number, number] = d ? [clamp01(a[0] + d.dx), clamp01(a[1] + d.dy)] : a;
+            const lImg: [number, number] = d ? [clamp01(l[0] + d.dx), clamp01(l[1] + d.dy)] : l;
+            return { anchor: imageToStage(aImg), leader: imageToStage(lImg), idx };
+          })
+        : layOutHotspots(node.hotspots.map((h) => {
+            const a: [number, number] = h.anchor_xy ?? [0, 0];
+            const l: [number, number] = h.leader_xy ?? a;
+            return { ...h, anchor_xy: imageToStage(a), leader_xy: imageToStage(l) };
+          })))
     : [];
+
+  // --- Edit-mode hotspot drag handlers. The card forwards pointer events
+  // here. We track the start point and convert the px delta into an IMAGE-
+  // relative delta (divide by the painted image's px size) so the move is
+  // accurate even when the picture is letterboxed. On release we commit the
+  // new anchor_xy + leader_xy (both shifted by the same delta so the leader
+  // line keeps its relative offset) via onHotspotEdit.
+  function onHotspotDragStart(index: number, e: React.PointerEvent) {
+    if (!editing || !node) return;
+    dragStartRef.current = { x: e.clientX, y: e.clientY };
+    setDrag({ idx: index, dx: 0, dy: 0 });
+    try { (e.target as HTMLElement).setPointerCapture(e.pointerId); } catch {}
+  }
+  function onHotspotDragMove(index: number, e: React.PointerEvent) {
+    if (!editing || !dragStartRef.current) return;
+    const stage = stageRef.current?.getBoundingClientRect();
+    if (!stage || !imageRect || imageRect.width === 0 || imageRect.height === 0) return;
+    // px delta → fraction of the painted image (imageRect is % of stage).
+    const imgWpx = (imageRect.width / 100) * stage.width;
+    const imgHpx = (imageRect.height / 100) * stage.height;
+    const dx = (e.clientX - dragStartRef.current.x) / imgWpx;
+    const dy = (e.clientY - dragStartRef.current.y) / imgHpx;
+    setDrag({ idx: index, dx, dy });
+  }
+  function onHotspotDragEnd(index: number) {
+    const d = drag;
+    dragStartRef.current = null;
+    if (!d || d.idx !== index || !node) { setDrag(null); return; }
+    // Ignore micro-moves (treat as a no-op so a stray jiggle doesn't persist).
+    if (Math.abs(d.dx) < 0.002 && Math.abs(d.dy) < 0.002) { setDrag(null); return; }
+    const h = node.hotspots[index];
+    const a: [number, number] = h.anchor_xy ?? [0, 0];
+    const l: [number, number] = h.leader_xy ?? a;
+    const nextA: [number, number] = [clamp01(a[0] + d.dx), clamp01(a[1] + d.dy)];
+    const nextL: [number, number] = [clamp01(l[0] + d.dx), clamp01(l[1] + d.dy)];
+    setDrag(null);
+    onHotspotEdit?.(index, { anchor_xy: nextA, leader_xy: nextL }, { anchor_xy: a, leader_xy: l });
+  }
+  function onHotspotRename(index: number, label: string) {
+    if (!node) return;
+    const prev = node.hotspots[index]?.label ?? '';
+    const next = label.trim().slice(0, 80);
+    if (next === prev || !next) return;
+    onHotspotEdit?.(index, { label: next }, { label: prev });
+  }
 
   // --- Leader-line geometry: measure card rects so the line lands on the
   // actual card edge instead of a guessed centre. We re-measure whenever
@@ -410,7 +490,11 @@ export function Canvas({ canvasId, node, tree, imageLoading, pendingClicks, read
           </div>
         )}
 
-        {/* Leader lines: card edge to leader point */}
+        {/* Leader lines: card edge to leader point. The line lives in the
+            stretched (preserveAspectRatio="none") viewBox; the endpoint dot is
+            rendered separately as a fixed-size HTML circle below so it stays
+            round instead of being squashed into an ellipse by the non-uniform
+            viewBox scaling. */}
         {node && layouts.length > 0 && (
           <svg
             className={styles.leaderSvg}
@@ -427,14 +511,22 @@ export function Canvas({ canvasId, node, tree, imageLoading, pendingClicks, read
               if (!card) return null;
               const [sx, sy] = attachPoint(card, tx, ty);
               return (
-                <g key={idx}>
-                  <line x1={sx} y1={sy} x2={tx} y2={ty} />
-                  <circle cx={tx} cy={ty} r="0.5" />
-                </g>
+                <line key={idx} x1={sx} y1={sy} x2={tx} y2={ty} />
               );
             })}
           </svg>
         )}
+
+        {/* Leader endpoint dots — fixed-size HTML circles positioned in stage
+            % (leader xy is stage-relative). Always round. */}
+        {node && layouts.map(({ idx, leader }) => (
+          <div
+            key={`dot-${idx}`}
+            className={styles.leaderDot}
+            style={{ left: pct(leader[0]), top: pct(leader[1]) }}
+            aria-hidden
+          />
+        ))}
 
         {/* Selectable text overlay (OCR'd in-image annotations) */}
         {node && !isSvg && node.text_layer && node.text_layer.length > 0 && (
@@ -462,6 +554,12 @@ export function Canvas({ canvasId, node, tree, imageLoading, pendingClicks, read
                 generating={childGenerating}
                 onClick={onHotspotClick}
                 onDelete={!readOnly ? onHotspotDelete : undefined}
+                editMode={editing}
+                dragging={drag?.idx === idx}
+                onRename={editing ? onHotspotRename : undefined}
+                onDragStart={editing ? onHotspotDragStart : undefined}
+                onDragMove={editing ? onHotspotDragMove : undefined}
+                onDragEnd={editing ? onHotspotDragEnd : undefined}
               />
             );
           })}
@@ -499,28 +597,20 @@ export function Canvas({ canvasId, node, tree, imageLoading, pendingClicks, read
           // The streamed title/caption/image_prompt is viewable by clicking
           // into the node's placeholder page — we don't cram it into the pill.
           const bubbleText = phaseLabel;
-          // Clickable once the node has a hash (planner_done) to jump into its
-          // page. The generating node is persisted from the start, so its
-          // hotspot card is the primary way in; this bubble is a secondary
-          // affordance for the originating tab.
-          const navHash = p.hash;
-          const canNav = !!navHash && !!onJumpToHash;
-          const clickable = canNav;
+          // The bubble is a pure progress indicator — NOT interactive. The
+          // still-generating node is reachable via its catalog row / hotspot
+          // card; making the pill clickable confused it with a real control,
+          // so it stays display-only (pointer-events disabled via CSS).
           return (
             <div
               key={p.jobId}
-              className={`${styles.pendingClick} ${clickable ? styles.pendingClickNav : ''}`}
+              className={styles.pendingClick}
               style={{
                 left: pct(sx),
                 top: pct(sy),
               }}
               title={bubbleText}
-              role={clickable ? 'button' : undefined}
-              onPointerDown={clickable ? (e) => e.stopPropagation() : undefined}
-              onClick={clickable ? (e) => {
-                e.stopPropagation();
-                if (canNav && navHash) onJumpToHash(navHash);
-              } : undefined}
+              aria-hidden
             >
               <span className={styles.pendingDot} />
               <span className={styles.pendingLabel}>
@@ -560,15 +650,10 @@ export function Canvas({ canvasId, node, tree, imageLoading, pendingClicks, read
         )}
       </div>
       </div>
-      {showChrome && node?.caption && <CaptionMarkdown text={node.caption} className={styles.caption} clamp={!isGenerating} />}
-      {showChrome && !fullscreen && node && !readOnly && !isGenerating && (
+      {showChrome && node?.caption && <CaptionMarkdown text={node.caption} className={styles.caption} clamp={!isGenerating && !drafting} />}
+      {showChrome && !fullscreen && node && !readOnly && !isGenerating && !drafting && (
         <p className={styles.hint}>
           {t('canvas.hint.press', lang)}
-        </p>
-      )}
-      {showChrome && !fullscreen && node && readOnly && (
-        <p className={styles.hint}>
-          {t('canvas.preview.hint', lang)}
         </p>
       )}
       {lightboxOpen && hasImage && !isSvg && (

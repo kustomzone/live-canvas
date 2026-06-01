@@ -13,7 +13,11 @@ export const config = {
   // app/web/dist (production)
   webDistDir: process.env.WEB_DIST_DIR || path.resolve(__dirname, '..', '..', 'web', 'dist'),
   codebuddyBin: process.env.CODEBUDDY_BIN || 'codebuddy',
-  maxParallelCodebuddy: Number(process.env.MAX_PARALLEL_CODEBUDDY || 2),
+  maxParallelCodebuddy: Number(process.env.MAX_PARALLEL_CODEBUDDY || 20),
+  // Image generation runs on its own concurrency pool, separate from the
+  // planner/LLM subprocess limit above — image jobs are I/O-bound waits on the
+  // provider, so we allow many more in flight. Default 20.
+  maxParallelImage: Number(process.env.MAX_PARALLEL_IMAGE || 20),
   plannerTimeoutMs: Number(process.env.PLANNER_TIMEOUT_MS || 90_000),
   imageTimeoutMs: Number(process.env.IMAGE_TIMEOUT_MS || 180_000),
   imageSize: process.env.IMAGE_SIZE || '1920x1080',

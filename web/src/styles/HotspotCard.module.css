@@ -60,6 +60,38 @@
   background: #FFFAF0;
 }
 
+/* Edit mode: card is draggable (move cursor) + tinted to read as editable. */
+.hotspot.editable {
+  cursor: grab;
+  border-style: solid;
+  border-color: #0066CC;
+  box-shadow: 0 2px 10px rgba(0, 102, 204, 0.18);
+  touch-action: none; /* let pointer drag work on touch without scrolling */
+}
+.hotspot.editable:hover { transform: translateY(-2px); }
+.hotspot.dragging {
+  cursor: grabbing;
+  opacity: 0.92;
+  transform: scale(1.03);
+  box-shadow: 0 6px 18px rgba(0, 102, 204, 0.28);
+  z-index: 30;
+}
+
+/* Inline label editor shown while renaming in edit mode. */
+.labelInput {
+  display: block;
+  width: 100%;
+  min-width: 80px;
+  font: inherit;
+  font-weight: 600;
+  color: var(--ink);
+  border: 0;
+  border-bottom: 1.5px solid #0066CC;
+  background: transparent;
+  outline: none;
+  padding: 0;
+}
+
 .label {
   display: block;
   font-weight: 600;

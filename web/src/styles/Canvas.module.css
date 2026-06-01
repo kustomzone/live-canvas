@@ -213,6 +213,28 @@
 .leaderSvg line { stroke: var(--accent); stroke-width: 0.2; opacity: 0.7; }
 .leaderSvg circle { fill: var(--accent); }
 
+/* Leader-line endpoint dot. Rendered as a fixed-size HTML circle (not an SVG
+   circle inside the stretched preserveAspectRatio="none" viewBox, which would
+   squash it into an ellipse). Positioned in stage % and centred on the
+   endpoint via translate. */
+.leaderDot {
+  position: absolute;
+  width: 7px;
+  height: 7px;
+  border-radius: 50%;
+  background: var(--accent);
+  transform: translate(-50%, -50%);
+  pointer-events: none;
+  z-index: 19;
+}
+
+@media (max-width: 720px) {
+  .leaderDot { width: 5px; height: 5px; }
+}
+@media (max-width: 480px) {
+  .leaderDot { width: 4px; height: 4px; }
+}
+
 .hotspots { position: absolute; inset: 0; pointer-events: none; z-index: 20; }
 
 .title {

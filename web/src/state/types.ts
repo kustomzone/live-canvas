@@ -113,6 +113,9 @@ export type Toast = {
   // closes it. Used for failures / aborts the user should consciously
   // acknowledge (not just transient warnings about a degraded fallback).
   sticky?: boolean;
+  // Optional caller-supplied tag for targeted dismissal (e.g. removing a
+  // transient "busy" toast once its async work completes). Not rendered.
+  tag?: string;
 };
 
 export type GalleryEntry = {
@@ -180,6 +183,7 @@ export type AppState = {
   fullscreen: boolean;
   showChrome: boolean;                     // breadcrumb / caption / hint visibility in fullscreen
   showLabels: boolean;                     // hotspot card overlay visibility
+  editMode: boolean;                       // edit hotspots (rename / drag); never in read-only
   webSearch: boolean;                      // ask the planner to consult the web before generating
   // Image orientation for the NEXT canvas to be created. Per-canvas: fixed at
   // creation time. When viewing an existing canvas this reflects that
@@ -256,6 +260,7 @@ export const initialState: AppState = {
   fullscreen: false,
   showChrome: true,
   showLabels: true,
+  editMode: false,
   webSearch: readWebSearchPref(),
   orientation: readOrientationPref(),
   lastDrillFrom: null,

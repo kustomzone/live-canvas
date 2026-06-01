@@ -1,13 +1,16 @@
 import express from 'express';
 import { getCanvas } from '../store/canvasStore.js';
 import { isSafeId, isSafeHash } from '../store/paths.js';
-import { readNode, nodeExists } from '../store/nodeStore.js';
+import { readNode, nodeExists, writeNode } from '../store/nodeStore.js';
 import { enqueueClickExpansion } from '../generation/pipeline.js';
 import { deleteNodeCascade } from '../generation/deleteNode.js';
 import { regenerateNode } from '../generation/regenerateNode.js';
 import { cancelHotspot } from '../generation/cancelHotspot.js';
 import { uploadMemory, persistUpload } from './upload.js';
 import { normalizeLang } from '../generation/language.js';
+import { broadcast } from '../sse/hub.js';
+import { SseEvents } from '../sse/events.js';
+import { log } from '../lib/log.js';
 import { nanoid } from 'nanoid';
 
 export const clickRouter = express.Router();
@@ -158,4 +161,56 @@ clickRouter.post('/:id/click/upload', uploadMemory.single('image'), async (req, 
     clickXY: [x, y],
     queue: result.queue,
   });
+});
+
+// PATCH /api/canvas/:id/nodes/:hash/hotspots/:index
+//   Edit-mode update of a single hotspot's label and/or position. Body may
+//   carry { label?, anchor_xy?, leader_xy? }; only the provided fields are
+//   changed. Persists the node and broadcasts node_ready so every connected
+//   viewer (and the originating tab) re-renders the moved/renamed card.
+clickRouter.patch('/:id/nodes/:hash/hotspots/:index', async (req, res) => {
+  const { id, hash, index } = req.params;
+  if (!isSafeId(id)) return res.status(400).json({ error: 'bad_id' });
+  if (!isSafeHash(hash)) return res.status(400).json({ error: 'bad_hash' });
+  const idx = Number(index);
+  if (!Number.isInteger(idx) || idx < 0) return res.status(400).json({ error: 'bad_index' });
+
+  const { label, anchor_xy, leader_xy } = req.body || {};
+  const isXY = (v) => Array.isArray(v) && v.length === 2
+    && v.every((n) => typeof n === 'number' && n >= 0 && n <= 1);
+  if (anchor_xy !== undefined && !isXY(anchor_xy)) return res.status(400).json({ error: 'bad_anchor_xy' });
+  if (leader_xy !== undefined && !isXY(leader_xy)) return res.status(400).json({ error: 'bad_leader_xy' });
+  if (label !== undefined && typeof label !== 'string') return res.status(400).json({ error: 'bad_label' });
+  if (label === undefined && anchor_xy === undefined && leader_xy === undefined) {
+    return res.status(400).json({ error: 'no_fields' });
+  }
+
+  const runtime = await getCanvas(id);
+  if (!runtime) return res.status(404).json({ error: 'canvas_not_found' });
+
+  try {
+    const node = await readNode(id, hash);
+    if (!Array.isArray(node.hotspots) || !node.hotspots[idx]) {
+      return res.status(404).json({ error: 'hotspot_not_found' });
+    }
+    const h = node.hotspots[idx];
+    if (label !== undefined) h.label = label.trim().slice(0, 80);
+    if (anchor_xy !== undefined) h.anchor_xy = [anchor_xy[0], anchor_xy[1]];
+    if (leader_xy !== undefined) h.leader_xy = [leader_xy[0], leader_xy[1]];
+    await writeNode(id, node);
+
+    // Tell every viewer to re-render with the updated hotspot.
+    try {
+      broadcast(runtime, {
+        type: SseEvents.NODE_READY, canvasId: runtime.id, jobId: 'edit',
+        hash: node.hash, node,
+      });
+    } catch (e) {
+      log.warn(`[edit] broadcast node_ready failed: ${e?.message}`);
+    }
+    res.json({ ok: true, hash, index: idx, hotspot: node.hotspots[idx] });
+  } catch (e) {
+    if (e?.code === 'ENOENT') return res.status(404).json({ error: 'node_not_found' });
+    res.status(500).json({ error: 'update_failed', message: e?.message });
+  }
 });

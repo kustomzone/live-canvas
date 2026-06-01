@@ -19,6 +19,10 @@ import { PlannerError, PlannerRefusalError, ImageGenError, TimeoutError } from '
 import { log } from './lib/log.js';
 
 const sem = new Semaphore(config.maxParallelCodebuddy);
+// Image generation has its own (larger) concurrency pool — image jobs spend
+// most of their time waiting on the provider, so they shouldn't compete for
+// the small planner/LLM subprocess budget. Default 20 (MAX_PARALLEL_IMAGE).
+const imageSem = new Semaphore(config.maxParallelImage);
 
 // Test seam: allow tests to substitute the subprocess runner so callOnce's
 // retry/parse logic can be exercised deterministically without spawning the
@@ -521,7 +525,7 @@ export async function callImageGen({
   let capturedPath = null;
   let assistantProse = '';
 
-  return sem.run(async () => {
+  return imageSem.run(async () => {
     let lastErr;
     // Up to 3 attempts when a seed image is attached:
     //   1) ImageEdit with seed,

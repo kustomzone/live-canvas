@@ -5,6 +5,7 @@ import { isSafeId } from '../store/paths.js';
 import { enqueueRootGeneration } from '../generation/pipeline.js';
 import { normalizeLang } from '../generation/language.js';
 import { uploadMemory, persistUpload } from './upload.js';
+import { buildCanvasExport } from '../export/buildExport.js';
 
 export const canvasRouter = express.Router();
 
@@ -150,4 +151,35 @@ canvasRouter.get('/:id/manifest', async (req, res) => {
     orientation: runtime.orientation ?? 'landscape',
     createdAt: runtime.createdAt,
   });
+});
+
+// Export the whole canvas as a self-contained static site (zip). The archive
+// contains index.html / viewer.js / viewer.css / data.js + images/, and opens
+// directly from file:// with no server requests — a read-only offline replica
+// of the live preview. Streamed as an application/zip attachment.
+canvasRouter.get('/:id/export', async (req, res) => {
+  const { id } = req.params;
+  if (!isSafeId(id)) return res.status(400).json({ error: 'bad_id' });
+  const lang = normalizeLang(req.query?.lang);
+  try {
+    const { buffer, filename } = await buildCanvasExport(id, { lang });
+    // RFC 5987 encoded filename so non-ASCII (Chinese) topics survive.
+    const asciiFallback = filename.replace(/[^\x20-\x7E]+/g, '_');
+    const encoded = encodeURIComponent(filename);
+    res.setHeader('Content-Type', 'application/zip');
+    res.setHeader(
+      'Content-Disposition',
+      `attachment; filename="${asciiFallback}"; filename*=UTF-8''${encoded}`,
+    );
+    res.setHeader('Content-Length', buffer.length);
+    res.end(buffer);
+  } catch (e) {
+    if (e?.message === 'empty_canvas') {
+      return res.status(409).json({ error: 'empty_canvas' });
+    }
+    if (e?.code === 'ENOENT') {
+      return res.status(404).json({ error: 'not_found' });
+    }
+    res.status(500).json({ error: 'export_failed', message: e?.message });
+  }
 });

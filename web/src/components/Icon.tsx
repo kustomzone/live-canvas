@@ -30,6 +30,7 @@ import {
   RectangleVertical,   // ▯ portrait orientation
   Download,            // ⬇ download image
   ZoomIn,              // 🔍 enlarge / open image view
+  Pencil,              // ✎ edit mode (rename / drag hotspots)
 } from 'lucide-react';
 import type { LucideProps } from 'lucide-react';
 
@@ -63,6 +64,7 @@ const REGISTRY = {
   'orient-portrait': RectangleVertical,
   download: Download,
   'zoom-in': ZoomIn,
+  edit: Pencil,
 } as const;
 
 export type IconName = keyof typeof REGISTRY;

@@ -19,7 +19,7 @@ import { readNode, nodeExists } from '../store/nodeStore.js';
 import { readTree } from '../store/treeStore.js';
 import { updateCanvasTopic } from '../store/canvasStore.js';
 import { deleteNodeCascade } from './deleteNode.js';
-import { enqueueClickExpansion, enqueueRootGeneration } from './pipeline.js';
+import { enqueueRegenerateInPlace, enqueueRootGeneration } from './pipeline.js';
 import { log } from '../lib/log.js';
 
 export async function regenerateNode(canvas, hash, opts = {}) {
@@ -109,22 +109,29 @@ export async function regenerateNode(canvas, hash, opts = {}) {
     seedImagePath = node.seed_image ?? null;
   }
 
-  const result = await deleteNodeCascade(canvas, hash);
+  // Regenerate IN PLACE: keep the node's own hash (and the parent's hotspot
+  // link to it) so the breadcrumb and current view stay put. We only cascade-
+  // delete the node's CHILDREN (their content is invalidated by the re-roll);
+  // the node itself is re-registered as a generating skeleton and re-drawn via
+  // the streaming UI at its current breadcrumb level — no blank-canvas bounce
+  // to root.
+  const descendantHashes = (tree.nodes[hash].children ?? []).slice();
 
-  // Re-read the parent (deleteNodeCascade rewrote it).
-  const freshParent = await readNode(canvas.id, parentHash).catch(() => parent);
-
-  enqueueClickExpansion(canvas, {
-    parentNode: freshParent,
+  enqueueRegenerateInPlace(canvas, {
+    node,
+    parentNode: parent,
     clickXY,
     webSearchEnabled,
     seedImagePath,
     userLabel,
+    genInputs: gi,
+    descendantHashes,
     lang: opts.lang ?? 'zh',
   });
   return {
     ok: true,
-    deletedHashes: result.deletedHashes,
+    // The node itself is preserved (in-place); only its descendants are gone.
+    deletedHashes: descendantHashes,
     parentHash,
   };
 }

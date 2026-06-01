@@ -121,6 +121,11 @@ export const messages: Catalogue = {
   'topbar.regenerate.input.image': { zh: '上传图片', en: 'Uploaded image' },
   'topbar.regenerate.input.none': { zh: '无', en: '—' },
   'topbar.more': { zh: '更多', en: 'More' },
+  'topbar.edit-mode': { zh: '编辑模式', en: 'Edit mode' },
+  'topbar.export': { zh: '导出预览', en: 'Export preview' },
+  'topbar.export.busy': { zh: '正在导出…', en: 'Exporting…' },
+  'topbar.export.done': { zh: '已导出离线预览包', en: 'Exported offline preview' },
+  'topbar.export.fail': { zh: '导出失败', en: 'Export failed' },
   'breadcrumb.more': { zh: '选择层级', en: 'Jump to level' },
 
   // Sentinel topic shown while a canvas created from an image-only upload
@@ -187,6 +192,7 @@ export const messages: Catalogue = {
   'toast.deleted': { zh: '已删除', en: 'Deleted' },
   'toast.cancelled': { zh: '已取消生成', en: 'Generation cancelled' },
   'toast.regenerating': { zh: '已重新加入生成队列', en: 'Re-queued for generation' },
+  'toast.edit.fail': { zh: '编辑保存失败', en: 'Edit failed to save' },
   'toast.share.copied': { zh: '分享链接已复制', en: 'Share link copied' },
   'toast.share.fallback': { zh: '分享链接', en: 'Share link' },
   'toast.share.failed': { zh: '分享失败', en: 'Share failed' },

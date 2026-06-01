@@ -22,16 +22,19 @@ type Props = {
   onToggleFullscreen: () => void;
   onToggleChrome: () => void;
   onToggleLabels: () => void;
+  onToggleEditMode: () => void;
   onToggleWebSearch: () => void;
   onToggleComposeOnClick: () => void;
   onToggleOrientation: () => void;
   onRegenerate?: () => void;
+  onExportPreview?: () => void;
   // Attachment for new-canvas creation. Picked / pasted in the address bar.
   attachment: ImageSelection | null;
   onAttachmentChange: (sel: ImageSelection | null) => void;
   fullscreen: boolean;
   showChrome: boolean;
   showLabels: boolean;
+  editMode: boolean;
   webSearch: boolean;
   composeOnClick: boolean;
   orientation: 'landscape' | 'portrait';
@@ -44,8 +47,9 @@ export function TopBar(props: Props) {
     view, topic, currentNode, draftTopic, onDraftTopicChange, onSubmitTopic,
     onBackToGallery, onJumpBreadcrumb, onShare, onToggleFullscreen, onToggleChrome,
     onToggleLabels, onToggleWebSearch, onToggleComposeOnClick, onToggleOrientation, onRegenerate,
+    onExportPreview,
     attachment, onAttachmentChange,
-    fullscreen, showChrome, showLabels, webSearch, composeOnClick, orientation, readOnly, busy,
+    fullscreen, showChrome, showLabels, editMode, webSearch, composeOnClick, orientation, readOnly, busy,
   } = props;
 
   const [lang, setLang] = useLang();
@@ -200,12 +204,18 @@ export function TopBar(props: Props) {
           setLang={setLang}
           onToggleWebSearch={!readOnly ? onToggleWebSearch : undefined}
           onToggleLabels={view === 'canvas' ? onToggleLabels : undefined}
+          // Edit mode is canvas-only and never offered in read-only preview.
+          // TEMPORARILY HIDDEN: pass undefined so the menu item doesn't render.
+          // Re-enable by restoring the gated expression below.
+          onToggleEditMode={undefined}
+          // onToggleEditMode={view === 'canvas' && !readOnly && currentNode ? onToggleEditMode : undefined}
           onToggleComposeOnClick={view === 'canvas' && !readOnly ? onToggleComposeOnClick : undefined}
           // Orientation is fixed once a canvas exists, so only offer the
           // toggle on the gallery (before creating the next canvas).
           onToggleOrientation={view === 'gallery' && !readOnly ? onToggleOrientation : undefined}
           orientation={orientation}
           onRegenerate={view === 'canvas' && !readOnly && currentNode ? onRegenerate : undefined}
+          onExportPreview={view === 'canvas' && currentNode ? onExportPreview : undefined}
           regenerateInfo={view === 'canvas' && currentNode ? {
             // Faithful to inputs: topic only if the user actually typed one
             // (root node records user_topic; null for image-only). Child
@@ -218,6 +228,7 @@ export function TopBar(props: Props) {
           } : null}
           webSearch={webSearch}
           showLabels={showLabels}
+          editMode={editMode}
           composeOnClick={composeOnClick}
         />
       </div>
@@ -239,12 +250,15 @@ type MoreMenuProps = {
   setLang: (l: 'zh' | 'en') => void;
   onToggleWebSearch?: () => void;
   onToggleLabels?: () => void;
+  onToggleEditMode?: () => void;
   onToggleComposeOnClick?: () => void;
   onToggleOrientation?: () => void;
   onRegenerate?: () => void;
+  onExportPreview?: () => void;
   regenerateInfo?: RegenerateInfo | null;
   webSearch: boolean;
   showLabels: boolean;
+  editMode: boolean;
   composeOnClick: boolean;
   orientation: 'landscape' | 'portrait';
 };
@@ -252,7 +266,8 @@ type MoreMenuProps = {
 function MoreMenu({
   lang, setLang,
   onToggleWebSearch, onToggleLabels, onToggleComposeOnClick, onToggleOrientation, onRegenerate, regenerateInfo,
-  webSearch, showLabels, composeOnClick, orientation,
+  onExportPreview, onToggleEditMode,
+  webSearch, showLabels, editMode, composeOnClick, orientation,
 }: MoreMenuProps) {
   const [open, setOpen] = useState(false);
   const wrapRef = useRef<HTMLDivElement | null>(null);
@@ -412,6 +427,21 @@ function MoreMenu({
           </span>
         </button>
       )}
+      {onToggleEditMode && (
+        <button
+          type="button"
+          className={`${styles.moreItem} ${editMode ? styles.moreItemOn : ''}`}
+          role="menuitemcheckbox"
+          aria-checked={editMode}
+          onClick={() => { onToggleEditMode(); setOpen(false); }}
+        >
+          <Icon name="edit" size={14} />
+          <span className={styles.moreItemLabel}>{t('topbar.edit-mode', lang)}</span>
+          <span className={styles.moreItemState} aria-hidden>
+            {editMode ? <Icon name="current" size={10} /> : null}
+          </span>
+        </button>
+      )}
       <button
         type="button"
         className={styles.moreItem}
@@ -424,6 +454,17 @@ function MoreMenu({
           {lang === 'zh' ? 'English' : '中文'}
         </span>
       </button>
+      {onExportPreview && (
+        <button
+          type="button"
+          className={styles.moreItem}
+          role="menuitem"
+          onClick={() => { onExportPreview(); setOpen(false); }}
+        >
+          <Icon name="download" size={14} />
+          <span className={styles.moreItemLabel}>{t('topbar.export', lang)}</span>
+        </button>
+      )}
       <a
         className={styles.moreItem}
         role="menuitem"

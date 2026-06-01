@@ -133,6 +133,34 @@ export function imageUrl(canvasId: string, imageRel: string): string {
   return `${API}/canvas/${canvasId}/${imageRel.replace(/^\//, '')}`;
 }
 
+// Download the whole canvas as a self-contained static-site zip (openable
+// offline via file://). Fetches the blob and triggers a browser download,
+// preserving the server-supplied filename (Content-Disposition).
+export async function exportCanvas(canvasId: string, lang: 'zh' | 'en' = 'zh'): Promise<void> {
+  const res = await fetch(`${API}/canvas/${canvasId}/export?lang=${lang}`);
+  if (!res.ok) {
+    const txt = await res.text().catch(() => '');
+    throw new Error(`export failed: ${res.status} ${txt}`);
+  }
+  // Parse the filename from Content-Disposition (filename*=UTF-8'' preferred).
+  const cd = res.headers.get('Content-Disposition') || '';
+  let filename = 'flipbook.zip';
+  const star = /filename\*=UTF-8''([^;]+)/i.exec(cd);
+  const plain = /filename="([^"]+)"/i.exec(cd);
+  if (star) filename = decodeURIComponent(star[1]);
+  else if (plain) filename = plain[1];
+  const blob = await res.blob();
+  const url = URL.createObjectURL(blob);
+  const a = document.createElement('a');
+  a.href = url;
+  a.download = filename;
+  document.body.appendChild(a);
+  a.click();
+  a.remove();
+  // Revoke after a tick so the download has started.
+  setTimeout(() => URL.revokeObjectURL(url), 4000);
+}
+
 // Cascade-delete a node and all descendants.
 export async function deleteNode(
   canvasId: string,
@@ -171,7 +199,29 @@ export async function regenerateNode(
   return res.json();
 }
 
-// Cancel a still-generating hotspot (next_hash null). The in-flight
+// Edit-mode: update a single hotspot's label and/or position on a node.
+// Only the provided fields are changed server-side. The server persists the
+// node and broadcasts node_ready, so the local state also refreshes via SSE.
+export async function updateHotspot(
+  canvasId: string,
+  nodeHash: string,
+  index: number,
+  patch: { label?: string; anchor_xy?: [number, number]; leader_xy?: [number, number] },
+): Promise<{ ok: boolean; hash: string; index: number }> {
+  const res = await fetch(
+    `${API}/canvas/${canvasId}/nodes/${nodeHash}/hotspots/${index}`,
+    {
+      method: 'PATCH',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(patch),
+    },
+  );
+  if (!res.ok) {
+    const txt = await res.text();
+    throw new Error(`updateHotspot failed: ${res.status} ${txt}`);
+  }
+  return res.json();
+}
 // generation job runs to completion server-side and the orphan gets
 // swept on next restart — but the parent's hotspots[] entry is dropped
 // immediately, so the user stops seeing the pending bubble.

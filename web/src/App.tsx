@@ -10,7 +10,7 @@ import { Gallery } from './components/Gallery';
 import { ConfirmModal } from './components/ConfirmModal';
 import { ClickComposer } from './components/ClickComposer';
 import { useCanvasSSE } from './hooks/useCanvasSSE';
-import { createCanvas, clickAt, getNode, getTree, createShareLink, resolveShareLink, deleteNode, regenerateNode, cancelHotspot } from './lib/api';
+import { createCanvas, clickAt, getNode, getTree, createShareLink, resolveShareLink, deleteNode, regenerateNode, cancelHotspot, exportCanvas, updateHotspot } from './lib/api';
 import { useLang, t, displayTopic } from './lib/i18n';
 import { revokeSelection, type ImageSelection } from './lib/imageUpload';
 import { copyToClipboard } from './lib/clipboard';
@@ -523,6 +523,21 @@ export default function App() {
     }
   }, [state.canvasId, state.currentHash]);
 
+  // Export the whole flipbook as a self-contained static-site zip (openable
+  // offline via file://). Available in both authoring and read-only preview.
+  const onExportPreview = useCallback(async () => {
+    if (!state.canvasId) return;
+    dispatch({ type: 'add_toast', toast: { level: 'info', message: t('topbar.export.busy', lang), tag: 'export', sticky: true } });
+    try {
+      await exportCanvas(state.canvasId, lang);
+      dispatch({ type: 'remove_toast_by_tag', tag: 'export' });
+      dispatch({ type: 'add_toast', toast: { level: 'info', message: t('topbar.export.done', lang) } });
+    } catch (e) {
+      dispatch({ type: 'remove_toast_by_tag', tag: 'export' });
+      dispatch({ type: 'add_toast', toast: { level: 'error', message: `${t('topbar.export.fail', lang)}: ${(e as Error).message}` } });
+    }
+  }, [state.canvasId, lang]);
+
   const onToggleFullscreen = useCallback(() => {
     const next = !state.fullscreen;
     if (next) {
@@ -544,6 +559,31 @@ export default function App() {
   const onToggleLabels = useCallback(() => {
     dispatch({ type: 'toggle_labels' });
   }, []);
+
+  const onToggleEditMode = useCallback(() => {
+    dispatch({ type: 'toggle_edit_mode' });
+  }, []);
+
+  // Edit mode: persist a hotspot's new label and/or position. We update the
+  // local state optimistically (instant feedback), then PATCH the server. On
+  // failure we revert to the previous value and toast. `patch` carries only
+  // the changed fields. `prev` is the pre-edit snapshot used for rollback.
+  const onHotspotEdit = useCallback((
+    index: number,
+    patch: { label?: string; anchor_xy?: [number, number]; leader_xy?: [number, number] },
+    prev: { label?: string; anchor_xy?: [number, number]; leader_xy?: [number, number] },
+  ) => {
+    if (state.readOnly) return;
+    const canvasId = state.canvasId;
+    const hash = state.currentHash;
+    if (!canvasId || !hash) return;
+    dispatch({ type: 'update_hotspot_local', hash, index, patch });
+    void updateHotspot(canvasId, hash, index, patch).catch((e) => {
+      // Roll back the optimistic change and let the user know.
+      dispatch({ type: 'update_hotspot_local', hash, index, patch: prev });
+      dispatch({ type: 'add_toast', toast: { level: 'error', message: `${t('toast.edit.fail', lang)}: ${(e as Error).message}` } });
+    });
+  }, [state.readOnly, state.canvasId, state.currentHash, lang]);
 
   const onToggleWebSearch = useCallback(() => {
     dispatch({ type: 'toggle_web_search' });
@@ -635,11 +675,13 @@ export default function App() {
           onToggleFullscreen={onToggleFullscreen}
           onToggleChrome={onToggleChrome}
           onToggleLabels={onToggleLabels}
+          onToggleEditMode={onToggleEditMode}
           onToggleWebSearch={onToggleWebSearch}
           onToggleOrientation={onToggleOrientation}
           orientation={state.orientation}
           onToggleComposeOnClick={() => setComposeOnClick((v) => !v)}
           onRegenerate={onRegenerate}
+          onExportPreview={onExportPreview}
           attachment={topicAttachment}
           onAttachmentChange={(sel) => {
             // Revoke the previous preview URL when replacing.
@@ -649,6 +691,7 @@ export default function App() {
           fullscreen={state.fullscreen}
           showChrome={state.showChrome}
           showLabels={state.showLabels}
+          editMode={state.editMode}
           webSearch={state.webSearch}
           composeOnClick={composeOnClick}
           readOnly={state.readOnly}
@@ -691,12 +734,14 @@ export default function App() {
               readOnly={state.readOnly}
               showChrome={showChromeOrNotFullscreen}
               showLabels={state.showLabels}
+              editMode={state.editMode}
               fullscreen={state.fullscreen}
               enterMode={enterMode}
               originXY={originXY}
               onImageClick={onImageClick}
               onHotspotClick={onHotspotClick}
               onHotspotDelete={onHotspotDelete}
+              onHotspotEdit={onHotspotEdit}
               onJumpToHash={onJumpBreadcrumb}
               onImageRectChange={setCanvasImageRect}
               orientation={state.orientation}

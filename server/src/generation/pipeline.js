@@ -1392,3 +1392,97 @@ export function enqueueClickExpansion(canvas, { parentNode, clickXY, webSearchEn
     queue: clickQueueStatus(canvas.id, parentNode.hash),
   };
 }
+
+// Regenerate a NON-ROOT node IN PLACE — keeps the node's existing hash so the
+// breadcrumb, current view and the parent's hotspot link all stay intact. The
+// node is re-registered as a `generating` skeleton (image + hotspots cleared,
+// title/caption/path preserved) and re-broadcast, so the client keeps showing
+// the node at its current breadcrumb level and watches it re-draw via the
+// normal streaming/drafting UI — instead of the old behaviour that deleted the
+// node, bounced the breadcrumb to root, and flashed a blank canvas.
+//
+// `descendantHashes` are the node's children (already collected by the caller);
+// they're cascade-deleted because the re-rolled content invalidates them.
+export function enqueueRegenerateInPlace(canvas, {
+  node, parentNode, clickXY, webSearchEnabled, seedImagePath, userLabel,
+  genInputs = null, descendantHashes = [], lang = 'zh',
+}) {
+  const jobId = nanoid(8);
+  const hash = node.hash;
+  const key = clickKey(canvas.id, parentNode.hash);
+  genLog(jobId, 'enqueue.regen',
+    `canvas=${canvas.id} node=${hash} parent=${parentNode.hash} (in-place)`);
+
+  const jKey = jobKey(canvas.id, jobId);
+  markClickJobInFlight(canvas.id, jobId, {
+    parentHash: parentNode.hash,
+    clickXY: [Number(clickXY?.[0]) || 0, Number(clickXY?.[1]) || 0],
+    isResume: false,
+  });
+
+  clickSem.run(key, async () => {
+    // 1) Cascade-delete the node's descendants (their content is now stale).
+    //    The node ITSELF is preserved — we re-roll it under the same hash.
+    for (const c of descendantHashes) {
+      try { await deleteNodeCascade(canvas, c); }
+      catch (e) { genLog(jobId, 'regen.delChild', `${c}: ${e?.message}`); }
+    }
+
+    // 2) Re-register the node as a generating skeleton under its EXISTING
+    //    hash: clear image + hotspots, keep title/caption/parent/path so the
+    //    breadcrumb stays populated while it re-draws. Broadcast node_ready so
+    //    every viewer re-renders it in place (drafting overlay + spinner).
+    const skeleton = {
+      hash,
+      depth: node.depth ?? ((parentNode.depth ?? 0) + 1),
+      parent: parentNode.hash,
+      title: node.title || '',
+      caption: node.caption || '',
+      image_prompt: node.image_prompt || '',
+      hotspots: [],
+      status: 'generating',
+      web_search_used: webSearchEnabled !== false,
+      ...(seedImagePath ? { seed_image: seedImagePath, seed_image_url: seedImageUrlFor(canvas.id, seedImagePath) } : {}),
+      ...(genInputs ? { gen_inputs: genInputs } : {}),
+      path: Array.isArray(node.path) ? node.path : buildPath(parentNode, hash, node.title || ''),
+      style_tag: node.style_tag || 'isometric-illustration',
+    };
+    await registerNode(canvas.id, skeleton);
+    broadcast(canvas, { type: SseEvents.NODE_READY, canvasId: canvas.id, jobId, hash, node: skeleton });
+
+    // 3) Re-run the full pipeline under the same id. buildAndRegisterNode's
+    //    nodeId path streams onto this node and re-registers it with the new
+    //    image + hotspots on completion.
+    const { node: rebuilt, cancelled } = await buildAndRegisterNode({
+      canvas, parentNode, jobId,
+      currentLabel: userLabel || node.title || '',
+      hashSeed: userLabel || node.title || '',
+      webSearchEnabled,
+      seedImagePath,
+      genInputs,
+      lang,
+      nodeId: hash,
+    });
+    if (cancelled || !rebuilt) {
+      broadcast(canvas, { type: SseEvents.DONE, canvasId: canvas.id, jobId, hash, cacheHit: false });
+      return;
+    }
+    broadcast(canvas, { type: SseEvents.DONE, canvasId: canvas.id, jobId, hash, cacheHit: false });
+  })
+    .catch((e) => {
+      const reason = e instanceof PlannerRefusalError
+        ? e.message.slice(0, 240)
+        : '生成失败，请重试 / generation failed, please try again';
+      log.error(`[gen ${jobId}] regenerate-in-place failed:`, e?.stack || e);
+      try {
+        broadcast(canvas, { type: SseEvents.ERROR, canvasId: canvas.id, jobId, phase: 'plan', message: reason, recoverable: true });
+        broadcast(canvas, { type: SseEvents.DONE, canvasId: canvas.id, jobId, hash, cacheHit: false });
+      } catch { /* hub logs write errors */ }
+    })
+    .finally(() => {
+      clickJobsInFlight.delete(jKey);
+      clearPlannerSnapshot(canvas.id, jobId);
+    });
+
+  return { jobId };
+}

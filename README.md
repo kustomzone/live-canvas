@@ -12,6 +12,10 @@
 [![PRs Welcome](https://img.shields.io/badge/PRs-welcome-brightgreen.svg)](https://github.com/imcuttle/flipbook-app/pulls)
 [![GitHub stars](https://img.shields.io/github/stars/imcuttle/flipbook-app?style=social)](https://github.com/imcuttle/flipbook-app/stargazers)
 
+### 🔭 [**Live examples → imcuttle.github.io/flipbook-app**](https://imcuttle.github.io/flipbook-app/)
+
+> Browse fully-interactive, exported flipbooks right in your browser — click hotspots to drill in, no install needed.
+
 > ✨ Click anywhere on a generated image. The backend infers what you clicked,
 > searches the web when useful, generates a child diagram, and links it back.
 > **A flipbook of explorable knowledge — one click at a time.**
@@ -179,10 +183,17 @@ diagram with its own sources.
 ```
 .
 ├── prompts/                        # system / planner / click-label / image-prompt / decide-search
-├── scripts/sync-prompts.mjs
+├── scripts/
+│   ├── sync-prompts.mjs
+│   ├── serve-preview.mjs           # build + serve one canvas's static preview
+│   └── example-doc-publish.mjs     # publish canvases to GitHub Pages
 ├── server/
 │   └── src/
 │       ├── routes/                 # canvas, click, events (SSE), assets, share
+│       ├── export/                 # static-site exporter + viewer template
+│       │   ├── buildExport.js      # buildCanvasSite / buildCanvasExport (zip)
+│       │   └── template/           # self-contained index.html + viewer.js/css
+│       ├── lib/zip.js              # dependency-free ZIP writer
 │       ├── generation/
 │       │   ├── pipeline.js         # generateRoot + expandFromClick + per-node concurrency
 │       │   ├── decideSearch.js     # decide-then-search gate
@@ -250,6 +261,39 @@ abstract / timeless subjects skip search. When yes:
 5. The frontend renders a 📚 badge near the breadcrumb. Hover to see a popover
    with the source list (220 ms grace period so the popover is reachable with
    the mouse).
+
+## 📦 Export as a standalone static site
+
+Any canvas can be exported as a **fully self-contained static site** — a
+read-only replica of the preview with all data and images inlined, openable
+directly from `file://` with zero network requests.
+
+- **In-app**: the `···` More menu → **Export preview** downloads a `.zip`
+  (`index.html` / `viewer.js` / `viewer.css` / `data.js` + `images/`).
+- **Serve one locally** for quick viewing in a browser:
+
+  ```bash
+  npm run serve-preview -- <canvasId> [--lang en] [--port 8088]
+  ```
+
+  Builds the static site to a temp dir, starts a tiny static HTTP server,
+  prints the URL. Ctrl-C cleans up.
+
+- **Publish to GitHub Pages** (one or more canvases → a routed gallery landing
+  page at `/`, each example at `/<canvasId>/`):
+
+  ```bash
+  npm run example:publish -- <canvasId> [<canvasId> ...] [--lang en] [--no-push]
+  ```
+
+  Builds each canvas, regenerates the landing index, and pushes to the
+  `gh-pages` branch (accumulating — re-publishing a new id keeps the others).
+  → see the result at **https://imcuttle.github.io/flipbook-app/**.
+
+The exported viewer mirrors the live read-only preview: image stage with
+collision-avoiding hotspot labels, leader lines, selectable OCR text overlay,
+caption, breadcrumb, catalog and sources — plus progressive image loading,
+scene transitions, and next-layer image prefetch. It never calls the server.
 
 ## 🔗 Share / preview links
 
@@ -319,6 +363,8 @@ exact options and your IP).
 | `PROMPTS_DIR` | `prompts` | prompt files |
 | `DB_PATH` | `<DATA_DIR>/flipbook.sqlite` | SQLite file |
 | `MAX_PARALLEL_CLICKS_PER_NODE` | 4 | concurrent click expansions per parent |
+| `MAX_PARALLEL_CODEBUDDY` | 20 | concurrent planner/LLM subprocesses |
+| `MAX_PARALLEL_IMAGE` | 20 | concurrent image-generation jobs (separate pool from the LLM limit) |
 | `PLANNER_TIMEOUT_MS` | 90000 | per-call planner timeout |
 | `IMAGE_TIMEOUT_MS` | 180000 | per-call ImageGen timeout |
 | `WEB_SEARCH_TIMEOUT_MS` | 60000 | per-call WebSearch timeout |

@@ -12,6 +12,10 @@
 [![PRs Welcome](https://img.shields.io/badge/PRs-welcome-brightgreen.svg)](https://github.com/imcuttle/flipbook-app/pulls)
 [![GitHub stars](https://img.shields.io/github/stars/imcuttle/flipbook-app?style=social)](https://github.com/imcuttle/flipbook-app/stargazers)
 
+### 🔭 [**在线示例 → imcuttle.github.io/flipbook-app**](https://imcuttle.github.io/flipbook-app/)
+
+> 直接在浏览器里浏览已导出的可交互画册 —— 点击热点即可深入，无需安装。
+
 > ✨ 在生成的图片上任意位置长按。后端会推断你点的是什么、必要时联网搜索资料、
 > 生成一张子图并把它链回来。**一本可以"点出来"的可探索画册 —— 一次一个点击。**
 
@@ -162,9 +166,16 @@ planner → ImageGen → 点击图中的舌部解剖 / 巢洞剖面 / 草地觅�
 ```
 .
 ├── prompts/                        # system / planner / click-label / image-prompt / decide-search
-├── scripts/sync-prompts.mjs
+├── scripts/
+│   ├── sync-prompts.mjs
+│   ├── serve-preview.mjs           # 导出并起服务预览单个 canvas
+│   └── example-doc-publish.mjs     # 发布 canvas 到 GitHub Pages
 ├── server/
 │   └── src/
+│       ├── export/                 # 静态站点导出器 + viewer 模板
+│       │   ├── buildExport.js      # buildCanvasSite / buildCanvasExport(zip)
+│       │   └── template/           # 自包含 index.html + viewer.js/css
+│       ├── lib/zip.js              # 零依赖 ZIP 写入器
 │       ├── routes/                 # canvas、click、events (SSE)、assets、share
 │       ├── generation/
 │       │   ├── pipeline.js         # generateRoot + expandFromClick + 节点并发
@@ -230,6 +241,35 @@ planner 之前的关卡（`decideSearch.js` + `prompts/decide-search.md`）会�
 5. 前端在面包屑边上出现 📚 徽标，鼠标移上去看来源列表（hover 离开有 220ms
    的宽限期，避免浮层够不到就消失）。
 
+## 📦 导出为独立静态站点
+
+任意 canvas 都能导出成 **完全自包含的静态站点** —— 只读预览的副本，所有数据与
+图片内联，可直接用 `file://` 打开，零网络请求。
+
+- **应用内**：`···` 更多菜单 → **导出预览**，下载一个 `.zip`
+  （`index.html` / `viewer.js` / `viewer.css` / `data.js` + `images/`）。
+- **本地起服务**快速在浏览器查看：
+
+  ```bash
+  npm run serve-preview -- <canvasId> [--lang en] [--port 8088]
+  ```
+
+  导出到临时目录并启动一个极简静态 HTTP 服务，打印访问地址，Ctrl-C 自动清理。
+
+- **发布到 GitHub Pages**（一个或多个 canvas → 首页画廊路由到各示例
+  `/<canvasId>/`）：
+
+  ```bash
+  npm run example:publish -- <canvasId> [<canvasId> ...] [--lang en] [--no-push]
+  ```
+
+  构建每个 canvas、重建首页、推送到 `gh-pages` 分支（**累积式** —— 再发布新的
+  id 不会丢掉已有的）。→ 成果见 **https://imcuttle.github.io/flipbook-app/**。
+
+导出的 viewer 完整还原站内只读预览：图片舞台 + 防重叠的热点标签、引导线、可选中
+的 OCR 文本层、图说、面包屑、目录与来源 —— 并带渐进式图片加载、场景切换动效、
+下一层图片预加载。全程不请求服务端。
+
 ## 🔗 分享 / 预览链接
 
 - `POST /api/canvas/:id/share` → `{token, url}`。同一 canvas 复用同一 token。
@@ -292,6 +332,8 @@ bash scripts/lan-domain-setup.sh studio.lan 5173 8787
 | `PROMPTS_DIR` | `prompts` | 提示词目录 |
 | `DB_PATH` | `<DATA_DIR>/flipbook.sqlite` | SQLite 文件路径 |
 | `MAX_PARALLEL_CLICKS_PER_NODE` | 4 | 同一父节点的并发点击上限 |
+| `MAX_PARALLEL_CODEBUDDY` | 20 | planner/LLM 子进程并发数 |
+| `MAX_PARALLEL_IMAGE` | 20 | 生图并发数（独立于 LLM 并发池） |
 | `PLANNER_TIMEOUT_MS` | 90000 | 单次 planner 超时 |
 | `IMAGE_TIMEOUT_MS` | 180000 | 单次 ImageGen 超时 |
 | `WEB_SEARCH_TIMEOUT_MS` | 60000 | 单次 WebSearch 超时 |
