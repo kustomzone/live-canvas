@@ -52,6 +52,8 @@ export async function hydrateFromDisk() {
       branches: manifest.branches ?? 5,
       rootHash,
       coverImage,
+      orientation: (manifest.orientation === 'portrait' || tree?.orientation === 'portrait')
+        ? 'portrait' : 'landscape',
       nodeCount,
       createdAt: new Date(manifest.created_at ?? Date.now()),
       lastRunAt: new Date(manifest.last_run_at ?? manifest.created_at ?? Date.now()),

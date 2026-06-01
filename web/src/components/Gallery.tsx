@@ -34,6 +34,23 @@ export function Gallery({ onOpen, refreshKey }: Props) {
   const [error, setError] = useState<string | null>(null);
   const [lang] = useLang();
 
+  // Orientation filter (all | landscape | portrait). Initialised from the URL
+  // (?orientation=) and synced back so refresh / share preserves it. Default
+  // (no param) = all.
+  const [orientFilter, setOrientFilter] = useState<'all' | 'landscape' | 'portrait'>(() => {
+    if (typeof window === 'undefined') return 'all';
+    const v = new URLSearchParams(window.location.search).get('orientation');
+    return v === 'landscape' || v === 'portrait' ? v : 'all';
+  });
+  // Keep the URL query in sync with the filter (replaceState — no history spam).
+  useEffect(() => {
+    if (typeof window === 'undefined') return;
+    const url = new URL(window.location.href);
+    if (orientFilter === 'all') url.searchParams.delete('orientation');
+    else url.searchParams.set('orientation', orientFilter);
+    window.history.replaceState(null, '', url.toString());
+  }, [orientFilter]);
+
   // Edit mode: when on, cards become multi-selectable (checkbox overlay)
   // and a delete bar appears. Selection is a Set of canvasIds.
   const [editMode, setEditMode] = useState(false);
@@ -62,7 +79,8 @@ export function Gallery({ onOpen, refreshKey }: Props) {
     // Leaving/refreshing the gallery exits edit mode and clears selection.
     setEditMode(false);
     setSelected(new Set());
-    listCanvasesPage(PAGE_SIZE, 0, null, ctrl.signal)
+    const apiOrient = orientFilter === 'all' ? null : orientFilter;
+    listCanvasesPage(PAGE_SIZE, 0, null, ctrl.signal, apiOrient)
       .then((page) => {
         if (ctrl.signal.aborted) return;
         setEntries(page.items);
@@ -79,7 +97,7 @@ export function Gallery({ onOpen, refreshKey }: Props) {
         if (!ctrl.signal.aborted) setLoading(false);
       });
     return () => { ctrl.abort(); };
-  }, [refreshKey]);
+  }, [refreshKey, orientFilter]);
 
   const loadMore = useCallback(async () => {
     if (loadingMore || loading || !hasMore) return;
@@ -92,7 +110,8 @@ export function Gallery({ onOpen, refreshKey }: Props) {
       // missing (e.g. deleted between pages).
       const last = entries[entries.length - 1];
       const lastId = last?.canvasId ?? null;
-      const page = await listCanvasesPage(PAGE_SIZE, entries.length, lastId);
+      const apiOrient = orientFilter === 'all' ? null : orientFilter;
+      const page = await listCanvasesPage(PAGE_SIZE, entries.length, lastId, undefined, apiOrient);
       // Guard against duplicate IDs in case of race / overlapping fetches.
       setEntries((prev) => {
         const seen = new Set(prev.map((e) => e.canvasId));
@@ -109,7 +128,7 @@ export function Gallery({ onOpen, refreshKey }: Props) {
     } finally {
       setLoadingMore(false);
     }
-  }, [entries, hasMore, loading, loadingMore]);
+  }, [entries, hasMore, loading, loadingMore, orientFilter]);
 
   // Bind IO to the sentinel. We use a callback ref so the observer is
   // attached/re-attached as the sentinel mounts (initial load) and remains
@@ -190,6 +209,21 @@ export function Gallery({ onOpen, refreshKey }: Props) {
         <div className={styles.headerLeft}>
           <h2 className={styles.title}>{t('gallery.title', lang)}</h2>
           <span className={styles.count}>{format(t(countKey, lang), { n: total })}</span>
+          <div className={styles.orientFilter} role="group" aria-label={t('gallery.filter.orientation', lang)}>
+            {(['all', 'landscape', 'portrait'] as const).map((o) => (
+              <button
+                key={o}
+                type="button"
+                className={`${styles.orientChip} ${orientFilter === o ? styles.orientChipOn : ''}`}
+                onClick={() => setOrientFilter(o)}
+                aria-pressed={orientFilter === o}
+              >
+                {t(o === 'all' ? 'gallery.filter.all'
+                  : o === 'landscape' ? 'gallery.filter.landscape'
+                  : 'gallery.filter.portrait', lang)}
+              </button>
+            ))}
+          </div>
         </div>
         {entries.length > 0 && (
           <div className={styles.headerActions}>

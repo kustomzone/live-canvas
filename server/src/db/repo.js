@@ -3,7 +3,7 @@
 import { Op } from 'sequelize';
 import { models } from './index.js';
 
-export async function upsertCanvasMeta({ canvasId, topic, slug, branches, createdAt, lastRunAt }) {
+export async function upsertCanvasMeta({ canvasId, topic, slug, branches, orientation, createdAt, lastRunAt }) {
   const { Canvas } = models();
   return Canvas.upsert({
     canvasId,
@@ -12,6 +12,7 @@ export async function upsertCanvasMeta({ canvasId, topic, slug, branches, create
     branches: branches ?? 5,
     rootHash: null,
     coverImage: null,
+    orientation: orientation === 'portrait' ? 'portrait' : 'landscape',
     nodeCount: 0,
     createdAt: createdAt ?? new Date(),
     lastRunAt: lastRunAt ?? new Date(),
@@ -82,8 +83,13 @@ export async function listHotspotsForParent(canvasId, parentHash) {
   return Hotspot.findAll({ where: { canvasId, parentHash }, order: [['createdAt', 'ASC']] });
 }
 
-export async function listCanvasesFromDb({ limit, offset, lastCanvasId } = {}) {
+export async function listCanvasesFromDb({ limit, offset, lastCanvasId, orientation } = {}) {
   const { Canvas } = models();
+  // Optional orientation filter ('landscape' | 'portrait'). Anything else
+  // (undefined / 'all') means no filter.
+  const orientWhere = (orientation === 'landscape' || orientation === 'portrait')
+    ? { orientation }
+    : null;
   // Stable order: createdAt DESC, then canvasId DESC as a tiebreak (so two
   // rows with identical createdAt still have a deterministic order across
   // pages — the cursor below uses this as the keyset comparison).
@@ -96,16 +102,17 @@ export async function listCanvasesFromDb({ limit, offset, lastCanvasId } = {}) {
   if (typeof lastCanvasId === 'string' && lastCanvasId) {
     const cursor = await Canvas.findOne({ where: { canvasId: lastCanvasId } });
     if (cursor) {
+      const keyset = {
+        [Op.or]: [
+          { createdAt: { [Op.lt]: cursor.createdAt } },
+          {
+            createdAt: cursor.createdAt,
+            canvasId: { [Op.lt]: cursor.canvasId },
+          },
+        ],
+      };
       const rows = await Canvas.findAll({
-        where: {
-          [Op.or]: [
-            { createdAt: { [Op.lt]: cursor.createdAt } },
-            {
-              createdAt: cursor.createdAt,
-              canvasId: { [Op.lt]: cursor.canvasId },
-            },
-          ],
-        },
+        where: orientWhere ? { [Op.and]: [keyset, orientWhere] } : keyset,
         order,
         ...(typeof limit === 'number' && limit > 0 ? { limit } : {}),
       });
@@ -117,6 +124,7 @@ export async function listCanvasesFromDb({ limit, offset, lastCanvasId } = {}) {
   }
 
   const opts = { order };
+  if (orientWhere) opts.where = orientWhere;
   if (typeof limit === 'number' && limit > 0) opts.limit = limit;
   if (typeof offset === 'number' && offset > 0) opts.offset = offset;
   const rows = await Canvas.findAll(opts);
@@ -131,15 +139,19 @@ function rowToDto(r) {
     branches: r.branches,
     rootHash: r.rootHash,
     coverImage: r.coverImage,
+    orientation: r.orientation === 'portrait' ? 'portrait' : 'landscape',
     nodeCount: r.nodeCount,
     created_at: r.createdAt?.toISOString() ?? null,
     last_run_at: r.lastRunAt?.toISOString() ?? null,
   };
 }
 
-export async function countCanvases() {
+export async function countCanvases(orientation) {
   const { Canvas } = models();
-  return Canvas.count();
+  const where = (orientation === 'landscape' || orientation === 'portrait')
+    ? { where: { orientation } }
+    : undefined;
+  return Canvas.count(where);
 }
 
 export async function bumpNodeCount(canvasId) {

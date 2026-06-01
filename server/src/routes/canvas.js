@@ -24,13 +24,17 @@ canvasRouter.get('/', async (req, res) => {
   const lastCanvasId = req.query?.lastCanvasId
     ? String(req.query.lastCanvasId).slice(0, 64)
     : undefined;
+  // Optional orientation filter (landscape | portrait). Anything else = all.
+  const orientation = (req.query?.orientation === 'landscape' || req.query?.orientation === 'portrait')
+    ? req.query.orientation
+    : undefined;
   if (rawLimit !== undefined) {
     const limit = Math.max(1, Math.min(100, Number(rawLimit) || 24));
     const offset = Math.max(0, Number(rawOffset) || 0);
-    const page = await listCanvases({ limit, offset, lastCanvasId });
+    const page = await listCanvases({ limit, offset, lastCanvasId, orientation });
     return res.json(page);
   }
-  const list = await listCanvases();
+  const list = await listCanvases({ orientation });
   res.json(list);
 });
 

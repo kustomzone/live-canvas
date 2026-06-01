@@ -119,6 +119,7 @@ export type GalleryEntry = {
   last_run_at: string;
   rootHash: string | null;
   coverImage: string | null; // server-relative URL or null
+  orientation?: 'landscape' | 'portrait';
   nodeCount: number;
 };
 

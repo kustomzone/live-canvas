@@ -36,6 +36,7 @@ export function defineModels(s = getSequelize()) {
     branches: { type: DataTypes.INTEGER, defaultValue: 5 },
     rootHash: { type: DataTypes.STRING(12), allowNull: true },
     coverImage: { type: DataTypes.STRING(255), allowNull: true }, // server-relative URL
+    orientation: { type: DataTypes.STRING(12), allowNull: true }, // 'landscape' | 'portrait'
     nodeCount: { type: DataTypes.INTEGER, defaultValue: 0 },
     createdAt: { type: DataTypes.DATE, allowNull: false },
     lastRunAt: { type: DataTypes.DATE, allowNull: false },
@@ -153,7 +154,33 @@ export async function initDb() {
   defineModels(s);
   await s.authenticate();
   await s.sync(); // creates tables if missing
+  // Lightweight column migration: older DBs created before a column existed
+  // won't get it from sync() (no alter). Add any missing columns manually —
+  // safer than sync({alter}), which on SQLite rebuilds whole tables and can
+  // fail on existing data. Each ADD COLUMN is idempotent (ignore "duplicate").
+  await ensureColumns(s);
   log.info(`[db] ready at ${getDbPath()}`);
+}
+
+// Idempotently add columns that newer code expects but an older on-disk DB
+// may lack. SQLite ADD COLUMN is cheap and non-destructive; we swallow the
+// "duplicate column name" error so this is safe to run on every boot.
+async function ensureColumns(s) {
+  const wanted = [
+    { table: 'canvases', column: 'orientation', ddl: "VARCHAR(12)" },
+  ];
+  for (const { table, column, ddl } of wanted) {
+    try {
+      await s.query(`ALTER TABLE \`${table}\` ADD COLUMN \`${column}\` ${ddl}`);
+      log.info(`[db] added missing column ${table}.${column}`);
+    } catch (e) {
+      const msg = String(e?.message || e);
+      // Already present (normal) — ignore. Anything else: log but don't crash.
+      if (!/duplicate column name/i.test(msg)) {
+        log.warn(`[db] ensureColumns ${table}.${column}: ${msg}`);
+      }
+    }
+  }
 }
 
 export async function closeDb() {

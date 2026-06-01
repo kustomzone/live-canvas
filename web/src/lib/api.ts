@@ -88,12 +88,14 @@ export async function listCanvasesPage(
   offset: number,
   lastCanvasId?: string | null,
   signal?: AbortSignal,
+  orientation?: 'landscape' | 'portrait' | null,
 ): Promise<{ items: GalleryEntry[]; total: number; hasMore: boolean }> {
   const params = new URLSearchParams({
     limit: String(limit),
     offset: String(offset),
   });
   if (lastCanvasId) params.set('lastCanvasId', lastCanvasId);
+  if (orientation) params.set('orientation', orientation);
   const res = await fetch(`${API}/canvas?${params.toString()}`, signal ? { signal } : undefined);
   if (!res.ok) throw new Error(`listCanvasesPage failed: ${res.status}`);
   return res.json();

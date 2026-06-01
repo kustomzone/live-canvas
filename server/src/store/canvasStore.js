@@ -58,7 +58,7 @@ export async function createCanvas({ topic, branches = 5, orientation = 'landsca
 
   // Record in DB (idempotent upsert)
   await upsertCanvasMeta({
-    canvasId: id, topic, slug, branches,
+    canvasId: id, topic, slug, branches, orientation: orient,
     createdAt: new Date(now), lastRunAt: new Date(now),
   });
 
@@ -76,13 +76,13 @@ export async function createCanvas({ topic, branches = 5, orientation = 'landsca
   return runtime;
 }
 
-export async function listCanvases({ limit, offset, lastCanvasId } = {}) {
+export async function listCanvases({ limit, offset, lastCanvasId, orientation } = {}) {
   await ensureCanvasesRoot();
-  const items = await listCanvasesFromDb({ limit, offset, lastCanvasId });
+  const items = await listCanvasesFromDb({ limit, offset, lastCanvasId, orientation });
   // Caller may want pagination metadata when limit is set; otherwise just
   // return the array (back-compat with non-paginated callers).
   if (typeof limit === 'number') {
-    const total = await countCanvases();
+    const total = await countCanvases(orientation);
     // hasMore is true when we filled the page exactly — there *might* be
     // more behind the cursor. False when we got fewer than `limit` rows
     // (definitely the last page).
