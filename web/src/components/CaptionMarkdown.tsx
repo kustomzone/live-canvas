@@ -9,6 +9,13 @@ type Props = {
   text: string;
   /** Class applied to the wrapping element (caller owns caption layout styling). */
   className?: string;
+  /**
+   * Clamp to 2 lines with a "查看更多" toggle (default). Set false to render
+   * the full text with no toggle — used on a still-generating node page where
+   * the caption is streaming in and the expand/collapse interaction would be
+   * meaningless (and jumpy).
+   */
+  clamp?: boolean;
 };
 
 // Node captions are prose that may contain INLINE markdown (**bold**,
@@ -29,7 +36,7 @@ const ALLOWED = ['a', 'em', 'strong', 'del', 'code', 'br'];
 // Caption clamped to 2 lines. When (and only when) the text overflows 2 lines,
 // a blue "查看更多" sits at the BOTTOM-RIGHT of the 2nd line (over a fade
 // mask); clicking expands to the full text with a trailing "收起".
-export function CaptionMarkdown({ text, className }: Props) {
+export function CaptionMarkdown({ text, className, clamp = true }: Props) {
   const [lang] = useLang();
   const [expanded, setExpanded] = useState(false);
   const [overflowing, setOverflowing] = useState(false);
@@ -38,8 +45,9 @@ export function CaptionMarkdown({ text, className }: Props) {
   // Reset to collapsed on text change (e.g. node navigation).
   useEffect(() => { setExpanded(false); }, [text]);
 
-  // Measure overflow against the 2-line clamp.
+  // Measure overflow against the 2-line clamp. Skipped when clamp is off.
   useEffect(() => {
+    if (!clamp) { setOverflowing(false); return; }
     const measure = () => {
       const el = textRef.current;
       if (!el) return;
@@ -48,13 +56,22 @@ export function CaptionMarkdown({ text, className }: Props) {
     measure();
     window.addEventListener('resize', measure);
     return () => window.removeEventListener('resize', measure);
-  }, [text]);
+  }, [text, clamp]);
 
   const md = (
     <ReactMarkdown components={COMPONENTS} allowedElements={ALLOWED} unwrapDisallowed>
       {text}
     </ReactMarkdown>
   );
+
+  // No-clamp mode (e.g. streaming generating node): render full text, no toggle.
+  if (!clamp) {
+    return (
+      <p className={`${styles.caption} ${className ?? ''}`}>
+        <span className={styles.full}>{md}</span>
+      </p>
+    );
+  }
 
   return (
     <p className={`${styles.caption} ${className ?? ''}`}>

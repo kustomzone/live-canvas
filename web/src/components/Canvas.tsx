@@ -560,8 +560,8 @@ export function Canvas({ canvasId, node, tree, imageLoading, pendingClicks, read
         )}
       </div>
       </div>
-      {showChrome && node?.caption && <CaptionMarkdown text={node.caption} className={styles.caption} />}
-      {showChrome && !fullscreen && node && !readOnly && (
+      {showChrome && node?.caption && <CaptionMarkdown text={node.caption} className={styles.caption} clamp={!isGenerating} />}
+      {showChrome && !fullscreen && node && !readOnly && !isGenerating && (
         <p className={styles.hint}>
           {t('canvas.hint.press', lang)}
         </p>
