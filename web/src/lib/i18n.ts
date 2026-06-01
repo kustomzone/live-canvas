@@ -139,23 +139,23 @@ export const messages: Catalogue = {
   'canvas.busy.badge': { zh: '并行中', en: 'in-flight' },
 
   // Phase chips on pending click bubbles
-  'phase.planning': { zh: '推断标签…', en: 'Inferring label…' },
-  'phase.image': { zh: '生成图片…', en: 'Generating image…' },
+  'phase.planning': { zh: '推断标签…', en: 'Inferring…' },
+  'phase.image': { zh: '正在绘图…', en: 'Drawing…' },
   'phase.finalizing': { zh: '收尾中…', en: 'Finalizing…' },
 
   // Streamed progress lines (server SSE phase_message → reducer →
   // pending click bubble). One per pipeline milestone — fall back to
   // messageEn when the i18n entry is missing.
-  'phase.seed.describe':   { zh: '正在分析您上传的图片…',           en: 'Analysing your image…' },
-  'phase.search':          { zh: '正在联网搜索资料…',                en: 'Searching the web for facts…' },
-  'phase.planner':         { zh: '正在拟标题、说明和画面构图…',      en: 'Drafting title, caption and scene…' },
-  'phase.planner.repair':  { zh: '主题被拒绝,正在换用更稳妥的措辞重试…', en: 'Topic declined — rewording to a safe phrasing…' },
-  'phase.image.gen':       { zh: '正在生成图片…',                    en: 'Generating illustration…' },
-  'phase.image.edit':      { zh: '基于您的图片生成带标注的画面…',    en: 'Generating annotated image from your upload…' },
-  'phase.image.repair':    { zh: '图像模型暂时拒绝,正在改写提示…',  en: 'Image model declined — refining prompt…' },
-  'phase.image.retry':     { zh: '使用改写后的提示重试…',            en: 'Retrying with refined prompt…' },
+  'phase.seed.describe':   { zh: '正在分析图片…',           en: 'Analysing image…' },
+  'phase.search':          { zh: '正在联网搜索…',                en: 'Searching…' },
+  'phase.planner':         { zh: '正在构图…',      en: 'Composing…' },
+  'phase.planner.repair':  { zh: '主题被拒绝,换措辞重试…', en: 'Topic declined — rewording…' },
+  'phase.image.gen':       { zh: '正在绘图…',                    en: 'Drawing…' },
+  'phase.image.edit':      { zh: '正在绘图…',    en: 'Drawing…' },
+  'phase.image.repair':    { zh: '提示被拒,正在改写…',  en: 'Refining prompt…' },
+  'phase.image.retry':     { zh: '改写提示后重试…',            en: 'Retrying…' },
   'phase.image.done':      { zh: '图像已就绪',                        en: 'Image ready' },
-  'phase.image.fallback':  { zh: '图像生成失败,使用占位图',           en: 'Image generation failed — using placeholder' },
+  'phase.image.fallback':  { zh: '绘图失败,使用占位图',           en: 'Drawing failed — using placeholder' },
 
   // Hotspot card
   'hotspot.delete.tip': { zh: '删除该分支', en: 'Delete this branch' },
