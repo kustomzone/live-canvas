@@ -11,6 +11,11 @@
   height: 56px;
   min-height: 56px;
   flex-shrink: 0;
+  /* Stick to the top of the scroll container while the page/gallery scrolls
+     beneath it. z-index keeps it above cards + above the More popover anchor. */
+  position: sticky;
+  top: 0;
+  z-index: 50;
 }
 
 .topbar.compact {
@@ -18,9 +23,8 @@
   gap: 6px;
   height: 44px;
   min-height: 44px;
-  /* In fullscreen the surrounding shell becomes beige; match it so the
-     topbar doesn't read as a separate white strip above the diagram. */
-  background: var(--bg);
+  /* Fullscreen chrome uses the same paper background as the rest of the
+     window (only the stage carries its own background). */
   border-bottom-color: transparent;
 }
 
@@ -318,15 +322,14 @@
   display: inline-flex;
   align-items: center;
   justify-content: center;
-  width: 16px;
-  height: 16px;
-  font-size: 11px;
+  /* Match the 14px lucide-icon column of sibling menu rows so the leading
+     glyph left-aligns with them (no border box that would shift it). */
+  width: 14px;
+  height: 14px;
+  font-size: 10px;
   font-weight: 700;
-  border: 1px solid var(--line);
-  border-radius: 4px;
+  color: var(--muted);
   flex-shrink: 0;
-  /* Keep "EN" on one line — without this the 2-char badge can wrap into
-     stacked letters inside the fixed 16px box on narrow mobile menus. */
   white-space: nowrap;
 }
 

@@ -418,8 +418,11 @@ function MoreMenu({
         role="menuitem"
         onClick={() => { setLang(lang === 'zh' ? 'en' : 'zh'); setOpen(false); }}
       >
-        <span className={styles.langInline}>{lang === 'zh' ? 'EN' : '中'}</span>
+        <span className={styles.langInline}>{lang === 'zh' ? '中' : 'EN'}</span>
         <span className={styles.moreItemLabel}>{t('topbar.lang.zh', lang)}</span>
+        <span className={styles.moreItemStateText} aria-hidden>
+          {lang === 'zh' ? 'English' : '中文'}
+        </span>
       </button>
       <a
         className={styles.moreItem}

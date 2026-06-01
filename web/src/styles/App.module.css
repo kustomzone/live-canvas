@@ -9,7 +9,6 @@
 
 .shell.fullscreen {
   padding: 0;
-  background: var(--bg);
 }
 
 .window {
@@ -18,7 +17,13 @@
   background: var(--paper);
   border-radius: 18px;
   border: 1px solid var(--line);
-  overflow: hidden;
+  /* Scroll INSIDE the window so the sticky TopBar pins to the window's top
+     edge instead of the document. max-height bounds the scrollport; the
+     rounded-corner clip is preserved by overflow on this same box. */
+  max-height: calc(100vh - 48px);
+  max-height: calc(100dvh - 48px);
+  overflow-y: auto;
+  overflow-x: hidden;
   display: flex;
   flex-direction: column;
 }
@@ -29,10 +34,8 @@
   border: 0;
   height: 100vh;
   height: 100dvh;
-  /* Match the stage's beige so the painted image (which uses the same beige
-     for its background) blends seamlessly with the page chrome — no white
-     frame around the diagram in fullscreen / casting view. */
-  background: var(--bg);
+  /* Keep the same paper background as non-fullscreen — only the stage
+     (image area) carries its own background. */
 }
 
 .canvas {
@@ -80,6 +83,14 @@
 
 @media (max-width: 720px) {
   .shell { padding: 0; }
-  .window { border-radius: 0; border: 0; min-height: 100vh; min-height: 100dvh; }
+  .window {
+    border-radius: 0;
+    border: 0;
+    min-height: 100vh;
+    min-height: 100dvh;
+    /* No shell padding on mobile → full viewport height is the scrollport. */
+    max-height: 100vh;
+    max-height: 100dvh;
+  }
   .canvas { padding: 12px 12px 16px; gap: 8px; min-height: 0; }
 }
