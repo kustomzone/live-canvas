@@ -1,24 +1,31 @@
 ---
-name: douyin-from-canvas
-description: 当需要把 flipbook-skill 画册（按 canvasId）转成抖音图文时使用 —— 包括把节点图片+文案导出为 douyin-export 包，以及把内容发布到 creator.douyin.com。触发词：画册发抖音、export canvas to douyin、发布到抖音、canvas 转图文。
+name: canvas-to-social
+description: 当需要把 flipbook-skill 画册（按 canvasId）转成社交平台图文时使用 —— 包括把节点图片+文案导出为素材包，以及把内容发布到抖音（creator.douyin.com）。触发词：画册发抖音、export canvas to social、发布到抖音、canvas 转图文。
 ---
 
-# 画册转抖音图文 (douyin-from-canvas)
+# 画册转社交图文 (canvas-to-social)
 
 ## 概述
 有意拆成两个独立阶段：
-1. **导出（确定性、可脚本化）**：从 flipbook-skill 数据存储读取一个画册，生成
-   `douyin-export/<主题>/` 包——图片按阅读顺序重命名，外加 `文案.md`（主帖正文+逐图说明）
-   和 `manifest.json`。
-2. **发布（浏览器自动化、需人工判断）**：操作已登录的抖音创作者中心网页，上传图片、
-   填标题/正文、选音乐、可选地选合集——然后**停下来，让用户自己点「发布」**。
+1. **导出（确定性、可脚本化、平台无关）**：从 flipbook-skill 数据存储读取一个画册，生成
+   `social-export/<主题>/` 包——图片按阅读顺序重命名，外加 `文案.md`（主帖正文+逐图说明）
+   和 `manifest.json`。这份导出包与具体平台无关，可复用于任意目标平台。
+2. **发布（浏览器自动化、需人工判断、按平台不同）**：操作已登录的创作者中心网页，上传图片、
+   填标题/正文、选音乐/话题、可选地选合集——然后**停下来，让用户自己点「发布」**。
+
+支持的发布平台（细节见各自的 reference）：
+- **抖音**：`references/publishing-douyin.md`（creator.douyin.com，图片 ≤ 35 张，可选 BGM/合集）。
+
+> 目前仅抖音发布流程已实测可用。未来要新增平台（如小红书）时，按本目录的
+> `publishing-douyin.md` 结构新增一份 `publishing-<平台>.md`，并在上表登记即可——
+> 导出阶段无需改动。
 
 ## 何时使用
-- "把某画册/canvas 发成抖音图文" / "export canvas to douyin" / "发布到抖音"。
+- "把某画册/canvas 发成抖音图文" / "export canvas to social" / "发布到抖音"。
 - 你拿到了一个 `canvasId`（位于 `server/data/canvases/` 下的文件夹）。
-- 只要图片+文案时，单独用阶段一；要自动填充帖子时，再加上阶段二。
+- 只要图片+文案时，单独用阶段一；要自动填充帖子时，再加上阶段二（按目标平台选对应 reference）。
 
-## 阶段一 —— 导出
+## 阶段一 —— 导出（平台无关）
 
 运行脚本（仅用标准库，无第三方依赖）。`--data-root` 默认是 `server/data`；如果当前
 工作目录不是 app 根目录则需覆盖。
@@ -30,18 +37,25 @@ python3 scripts/export_canvas.py <canvasId> \
 ```
 - BFS（根节点优先）排序 → 图片命名为 `01-标题.png` … `NN-标题.png`。
 - `--limit 35` 强制套用抖音图文上限；超过 35 会打印警告。
-- 输出目录默认 `douyin-export/<主题>`；脚本最后会打印 `OUT_DIR=...`。
+- 输出目录默认 `social-export/<主题>`；脚本最后会打印 `OUT_DIR=...`。
 
 随后和用户一起打磨文案：原始图说偏百科书面语。主动提议：(a) 挑出最佳 N 张图，
-(b) 改写成口语化、有钩子的短文案 + 吸睛标题。务必遵守
-**标题 ≤ 20 字、正文 ≤ 1000 字、图片 ≤ 35 张**（详见 references/publishing.md）。
+(b) 改写成口语化、有钩子的短文案 + 吸睛标题。务必遵守目标平台的字数/图片上限
+（抖音：**标题 ≤ 20 字、正文 ≤ 1000 字、图片 ≤ 35 张**，详见 references/publishing-douyin.md）。
 
-## 阶段二 —— 发布（可选）
+## 阶段二 —— 发布（可选，按平台分流）
 
 **必须**：用 `browser-harness` CLI（CDP）驱动用户已登录的 Chrome。其用法文档见
 `skills/` 下的同级 skill **`browser-harness`**（连接/上传/截图等机制都查它）。
-`browser-harness` 命令需已在 `$PATH` 上（单独安装）。按 **references/publishing.md**
-逐步执行。摘要：
+`browser-harness` 命令需已在 `$PATH` 上（单独安装）。
+
+按目标平台打开对应 reference 逐步执行：
+
+| 目标平台 | reference | 图片上限 | 关键差异 |
+|----------|-----------|----------|----------|
+| 抖音 | `references/publishing-douyin.md` | 35 | 有 BGM、有「图解世界」合集 |
+
+抖音发布骨架（细节严格按 `references/publishing-douyin.md` 第 1-7 步）：
 
 | 步骤 | 操作 | 关键坑 |
 |------|------|--------|
@@ -60,9 +74,9 @@ python3 scripts/export_canvas.py <canvasId> \
 ## 常见错误
 - **跨步骤复用坐标。** 页面会滚动和重渲染；每次点击前都按文字/placeholder 重新查询
   元素位置。
-- **往标题/正文里用 `type_text`。** React/Semi 输入框会丢键或截断。改用
-  references/publishing.md 里的 value-setter / `execCommand` 写法。
+- **往标题/正文里用 `type_text`。** React/Semi 输入框会丢键或截断。改用对应 reference 里的
+  value-setter / `execCommand` 写法。
 - **手写 `cdp("DOM.setFileInputFiles", …)` 加手动遍历节点树。** 很脆弱，且 `cdp()`
   helper 会拒绝带 `sessionId` 的键。用 `upload_file`。
-- **未经确认就发布。** 不要。停在第 7 步。
-- **导出超过 35 张还全部上传。** 抖音会拒收/截断；上限 35。
+- **未经确认就发布。** 不要。停在发布前那一步。
+- **导出超过平台上限还全部上传。** 抖音上限 35；超出会被拒收/截断。

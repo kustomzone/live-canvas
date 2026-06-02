@@ -245,6 +245,28 @@
   color: var(--ink);
 }
 
+/* Narration play/stop button next to the title. */
+.narrateBtn {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  vertical-align: middle;
+  margin-left: 8px;
+  width: 26px;
+  height: 26px;
+  padding: 0;
+  border: none;
+  border-radius: 50%;
+  cursor: pointer;
+  color: var(--muted);
+  background: rgba(31, 31, 31, 0.06);
+  transition: background 0.15s, color 0.15s;
+}
+.narrateBtn:hover {
+  color: var(--ink);
+  background: rgba(31, 31, 31, 0.12);
+}
+
 /* "生成中" chip shown before a generating node's (streaming) title. */
 .genChip {
   display: inline-flex;

@@ -624,6 +624,10 @@ export default function App() {
     dispatch({ type: 'toggle_web_search' });
   }, []);
 
+  const onToggleAutoNarrate = useCallback(() => {
+    dispatch({ type: 'toggle_auto_narrate' });
+  }, []);
+
   const onToggleOrientation = useCallback(() => {
     dispatch({ type: 'set_orientation', orientation: state.orientation === 'portrait' ? 'landscape' : 'portrait' });
   }, [state.orientation]);
@@ -718,6 +722,7 @@ export default function App() {
           onToggleLabels={onToggleLabels}
           onToggleEditMode={onToggleEditMode}
           onToggleWebSearch={onToggleWebSearch}
+          onToggleAutoNarrate={onToggleAutoNarrate}
           onToggleOrientation={onToggleOrientation}
           orientation={state.orientation}
           onToggleComposeOnClick={() => setComposeOnClick((v) => !v)}
@@ -734,6 +739,7 @@ export default function App() {
           showLabels={state.showLabels}
           editMode={state.editMode}
           webSearch={state.webSearch}
+          autoNarrate={state.autoNarrate}
           composeOnClick={composeOnClick}
           readOnly={state.readOnly}
           busy={busy}
@@ -786,6 +792,9 @@ export default function App() {
               onJumpToHash={onJumpBreadcrumb}
               onImageRectChange={setCanvasImageRect}
               orientation={state.orientation}
+              autoNarrate={state.autoNarrate}
+              narrated={!!(currentNode && state.narratedHashes[currentNode.hash])}
+              onMarkNarrated={(hash) => dispatch({ type: 'mark_narrated', hash })}
               overlay={!IS_EXPORT && clickComposer && (() => {
                 // image-relative xy → stage-relative for placement.
                 const ir = canvasImageRect ?? { left: 0, top: 0, width: 100, height: 100 };

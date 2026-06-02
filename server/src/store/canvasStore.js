@@ -39,6 +39,10 @@ export async function createCanvas({ topic, branches = 5, orientation = 'landsca
     root: null,
     branches,
     style: 'isometric-illustration',
+    // Narration mood for the whole flipbook. The root node's planner picks
+    // this; every node reuses it so the voice stays consistent. null until
+    // the root is generated.
+    voice_style: null,
     orientation: orient,
     nodes: {},
   };

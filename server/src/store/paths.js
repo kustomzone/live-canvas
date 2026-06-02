@@ -11,6 +11,9 @@ export const paths = {
   nodePath: (id, hash) => path.join(paths.nodeDir(id), `${hash}.json`),
   imageDir: (id) => path.join(paths.canvasDir(id), 'images'),
   imagePath: (id, hash, ext = 'png') => path.join(paths.imageDir(id), `${hash}.${ext}`),
+  // Synthesised narration audio (macOS `say`). Filename: <hash>.m4a.
+  audioDir: (id) => path.join(paths.canvasDir(id), 'audio'),
+  audioPath: (id, hash, ext = 'm4a') => path.join(paths.audioDir(id), `${hash}.${ext}`),
   // User-uploaded source images attached to a node (canvas creation seed
   // or per-click drilldown attachment). Filename: <jobId>.<ext>.
   uploadDir: (id) => path.join(paths.canvasDir(id), 'uploads'),

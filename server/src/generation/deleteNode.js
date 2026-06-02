@@ -69,6 +69,7 @@ export async function deleteNodeCascade(canvas, hash) {
     await unlinkIfExists(paths.imagePath(canvas.id, h, 'blur.jpg'));
     await unlinkIfExists(paths.imagePath(canvas.id, h, 'thumb.jpg'));
     await unlinkIfExists(paths.imagePath(canvas.id, h, 'medium.jpg'));
+    await unlinkIfExists(paths.audioPath(canvas.id, h, 'm4a'));
   }
 
   // 2) tree.json — drop entries + remove from any children[] lists

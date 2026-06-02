@@ -103,6 +103,9 @@ export const messages: Catalogue = {
   // Item labels in the More menu — pure noun phrases. The on/off state is
   // conveyed by the row's icon + checked styling, not by a trailing hint.
   'topbar.web': { zh: '联网搜索', en: 'Web search' },
+  'topbar.narrate': { zh: '自动朗读', en: 'Auto-narrate' },
+  'canvas.narrate.play': { zh: '朗读', en: 'Play narration' },
+  'canvas.narrate.stop': { zh: '停止朗读', en: 'Stop narration' },
   'topbar.compose-on-click': { zh: '长按输入', en: 'Long-press input' },
   'topbar.labels': { zh: '热点标签', en: 'Hotspot labels' },
   'topbar.orientation': { zh: '画面方向', en: 'Orientation' },

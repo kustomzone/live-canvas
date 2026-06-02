@@ -55,6 +55,12 @@ type Props = {
   // creation, adopted from the tree on open) — more reliable than reading
   // tree.orientation, which may not be loaded yet during root generation.
   orientation?: 'landscape' | 'portrait';
+  // Narration: auto-play on first visit when on, and a manual play/stop
+  // button. `narrated` is whether this node already auto-played this session;
+  // onMarkNarrated records that it has so re-visits don't auto-play again.
+  autoNarrate?: boolean;
+  narrated?: boolean;
+  onMarkNarrated?: (hash: string) => void;
 };
 
 const PHASE_KEY: Record<PendingClick['phase'], 'phase.planning' | 'phase.image' | 'phase.finalizing'> = {
@@ -63,7 +69,7 @@ const PHASE_KEY: Record<PendingClick['phase'], 'phase.planning' | 'phase.image' 
   finalizing: 'phase.finalizing',
 };
 
-export function Canvas({ canvasId, node, tree, imageLoading, pendingClicks, readOnly, showChrome, showLabels, editMode = false, fullscreen, enterMode = 'none', originXY, onImageClick, onHotspotClick, onHotspotDelete, onHotspotEdit, onJumpToHash, overlay, onImageRectChange, orientation }: Props) {
+export function Canvas({ canvasId, node, tree, imageLoading, pendingClicks, readOnly, showChrome, showLabels, editMode = false, fullscreen, enterMode = 'none', originXY, onImageClick, onHotspotClick, onHotspotDelete, onHotspotEdit, onJumpToHash, overlay, onImageRectChange, orientation, autoNarrate = false, narrated = false, onMarkNarrated }: Props) {
   const [lang] = useLang();
   // Prefer the explicit orientation prop (app state); fall back to the tree
   // for any caller that doesn't pass it.
@@ -92,6 +98,53 @@ export function Canvas({ canvasId, node, tree, imageLoading, pendingClicks, read
   // Enlarged single-image viewer (download + pinch-zoom). Mobile shows an
   // explicit enlarge button; the lightbox itself works on any viewport.
   const [lightboxOpen, setLightboxOpen] = useState(false);
+
+  // --- Narration audio ---
+  // Canvas is keyed by node hash in App, so this component remounts per node;
+  // a per-mount Audio element + "is playing" flag is all we need. Auto-play
+  // fires once on mount when autoNarrate is on, audio exists, and this node
+  // hasn't already auto-played this session (browsers may still block the
+  // first play() without a prior user gesture — we swallow that rejection).
+  const audioUrl = node?.audio_url ?? null;
+  const audioRef = useRef<HTMLAudioElement | null>(null);
+  const [playing, setPlaying] = useState(false);
+
+  const stopAudio = () => {
+    const a = audioRef.current;
+    if (a) { a.pause(); a.currentTime = 0; }
+    setPlaying(false);
+  };
+
+  const playAudio = () => {
+    if (!audioUrl) return;
+    let a = audioRef.current;
+    if (!a) {
+      a = new Audio(audioUrl);
+      a.addEventListener('ended', () => setPlaying(false));
+      a.addEventListener('pause', () => setPlaying(false));
+      audioRef.current = a;
+    }
+    a.play().then(() => setPlaying(true)).catch(() => setPlaying(false));
+  };
+
+  const toggleAudio = () => { if (playing) stopAudio(); else playAudio(); };
+
+  // Stop + tear down on unmount (node switch).
+  useEffect(() => () => {
+    const a = audioRef.current;
+    if (a) { a.pause(); audioRef.current = null; }
+  }, []);
+
+  // Auto-narrate on first visit. audioUrl may arrive after mount (async
+  // synthesis → audio_ready), so this effect re-runs when it appears.
+  const hashForNarrate = node?.hash;
+  useEffect(() => {
+    if (!autoNarrate || !audioUrl || !hashForNarrate || narrated || readOnly) return;
+    onMarkNarrated?.(hashForNarrate);
+    playAudio();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [autoNarrate, audioUrl, hashForNarrate, narrated, readOnly]);
+
 
   // Edit-mode hotspot drag. `drag` holds the index being moved and the live
   // delta in IMAGE-relative space (so it composes with the stored anchor/
@@ -441,6 +494,17 @@ export function Canvas({ canvasId, node, tree, imageLoading, pendingClicks, read
           {node.title}
           {isGenerating && <span className={styles.genCaret} />}
           {node.sources && node.sources.length > 0 && <SourcesBadge sources={node.sources} />}
+          {!isGenerating && audioUrl && (
+            <button
+              type="button"
+              className={styles.narrateBtn}
+              onClick={toggleAudio}
+              aria-label={t(playing ? 'canvas.narrate.stop' : 'canvas.narrate.play', lang)}
+              title={t(playing ? 'canvas.narrate.stop' : 'canvas.narrate.play', lang)}
+            >
+              <Icon name={playing ? 'stop' : 'play'} size={13} />
+            </button>
+          )}
           {tree && onJumpToHash && (
             <TreeBadge tree={tree} currentHash={node.hash} onJump={onJumpToHash} />
           )}

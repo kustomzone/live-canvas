@@ -9,6 +9,7 @@ docs-pages/
 .env.local
 *.tsbuildinfo
 douyin-export/
+social-export/
 .codebuddy/worktrees/
 topics-history/
 /themes.json

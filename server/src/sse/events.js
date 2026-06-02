@@ -17,6 +17,10 @@ export const SseEvents = Object.freeze({
   // blur placeholder up to medium / full-res.
   VARIANTS_READY: 'variants_ready',
   OCR_DONE: 'ocr_done',
+  // Narration audio (macOS `say`) for a node has been synthesised on disk.
+  // Carries the hash + audioUrl + voice/style so the client can enable the
+  // play button and (on first visit) auto-narrate. Async + non-fatal like OCR.
+  AUDIO_READY: 'audio_ready',
   NODE_READY: 'node_ready',
   // A user-friendly progress line for the pending click bubble. Sent
   // throughout generation (describeSeed / search / planner / image

@@ -114,11 +114,12 @@ async function sweepCanvas(canvasId) {
     for (const d of collectDescendants(tree.nodes, h)) expanded.add(d);
   }
 
-  // Disk: drop node JSONs and image files (both ext variants).
+  // Disk: drop node JSONs and image files (both ext variants) + audio.
   for (const h of expanded) {
     await unlinkIfExists(paths.nodePath(canvasId, h));
     await unlinkIfExists(paths.imagePath(canvasId, h, 'png'));
     await unlinkIfExists(paths.imagePath(canvasId, h, 'svg'));
+    await unlinkIfExists(paths.audioPath(canvasId, h, 'm4a'));
   }
 
   // tree.json: drop dead entries + scrub children[] references.

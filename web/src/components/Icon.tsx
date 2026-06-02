@@ -34,6 +34,9 @@ import {
   Sun,                 // ☀ theme: light
   Moon,                // ☾ theme: dark
   Monitor,             // 🖥 theme: follow system
+  Volume2,             // 🔊 narration / auto-narrate toggle
+  Play,                // ▶ play narration
+  Square,              // ■ stop narration
 } from 'lucide-react';
 import type { LucideProps } from 'lucide-react';
 
@@ -71,6 +74,9 @@ const REGISTRY = {
   'theme-light': Sun,
   'theme-dark': Moon,
   'theme-system': Monitor,
+  narrate: Volume2,
+  play: Play,
+  stop: Square,
 } as const;
 
 export type IconName = keyof typeof REGISTRY;

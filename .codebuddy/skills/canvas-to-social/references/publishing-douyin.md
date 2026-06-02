@@ -18,7 +18,7 @@
    **可见文字**（如「选择音乐」「修改音乐」「不选择合集」）找元素，或用 `cursor:pointer`
    的祖先、`document.elementFromPoint` 命中测试来锁定真正可点的节点。
 3. **回写本文档**：只要这次发现**与本文不符的新结构/新坑/更稳的做法**，就**立即用 Edit
-   更新本 publishing.md（及上层 SKILL.md 的对应摘要）**，把旧选择器标注为「（旧，可能失效）」
+   更新本 publishing-douyin.md（及上层 SKILL.md 的对应摘要）**，把旧选择器标注为「（旧，可能失效）」
    并补上新选择器和探测代码。目标是让下次执行拿到的是最新规则。
 4. 标注实测日期，方便判断新鲜度。
 
@@ -58,7 +58,7 @@ js("""(()=>{const o=[];document.querySelectorAll('div,button,span').forEach(el=>
 **传绝对路径的排序列表**，保证顺序是 01..35。
 ```python
 import glob
-files = sorted(glob.glob("/abs/path/douyin-export/<主题>/images/*.png"))
+files = sorted(glob.glob("/abs/path/social-export/<主题>/images/*.png"))
 upload_file("input[type=file]", files)   # helper 接受列表
 ```
 等约 8 秒；通过统计 `[draggable=true]` 缩略图数量（每张图一个）来核对。

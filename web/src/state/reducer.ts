@@ -1,5 +1,5 @@
 import type { AppState, Node, SseEvent, Tree, Toast, View, PendingClick } from './types';
-import { initialState, persistWebSearchPref, persistOrientationPref } from './types';
+import { initialState, persistWebSearchPref, persistOrientationPref, persistAutoNarratePref } from './types';
 
 export type Action =
   | { type: 'reset' }
@@ -16,6 +16,8 @@ export type Action =
   | { type: 'toggle_edit_mode' }
   | { type: 'update_hotspot_local'; hash: string; index: number; patch: { label?: string; anchor_xy?: [number, number]; leader_xy?: [number, number] } }
   | { type: 'toggle_web_search' }
+  | { type: 'toggle_auto_narrate' }
+  | { type: 'mark_narrated'; hash: string }
   | { type: 'set_orientation'; orientation: 'landscape' | 'portrait' }
   | { type: 'consume_drill_origin' }
   | { type: 'add_toast'; toast: Omit<Toast, 'id'> }
@@ -188,6 +190,17 @@ export function reducer(state: AppState, action: Action): AppState {
       return { ...state, webSearch: next };
     }
 
+    case 'toggle_auto_narrate': {
+      const next = !state.autoNarrate;
+      persistAutoNarratePref(next);
+      return { ...state, autoNarrate: next };
+    }
+
+    case 'mark_narrated': {
+      if (state.narratedHashes[action.hash]) return state;
+      return { ...state, narratedHashes: { ...state.narratedHashes, [action.hash]: true } };
+    }
+
     case 'set_orientation': {
       // Create-time preference for the next canvas. Persisted so it survives
       // reloads; existing canvases keep their own fixed orientation.
@@ -339,6 +352,15 @@ function applySse(state: AppState, evt: SseEvent): AppState {
     case 'image_ready': {
       const cur = state.nodes[evt.hash];
       const updated: Node | undefined = cur ? { ...cur, image: evt.imageUrl } : undefined;
+      const nodes = updated ? { ...state.nodes, [evt.hash]: updated } : state.nodes;
+      return { ...state, nodes };
+    }
+
+    case 'audio_ready': {
+      const cur = state.nodes[evt.hash];
+      const updated: Node | undefined = cur
+        ? { ...cur, audio_url: evt.audioUrl, audio_voice: evt.voice, audio_style: evt.style }
+        : undefined;
       const nodes = updated ? { ...state.nodes, [evt.hash]: updated } : state.nodes;
       return { ...state, nodes };
     }

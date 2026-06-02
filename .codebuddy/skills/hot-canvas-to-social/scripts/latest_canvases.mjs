@@ -30,7 +30,7 @@ function parseArgs(argv) {
 
 const args = parseArgs(process.argv);
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
-// scripts/ -> hot-canvas-to-douyin/ -> skills/ -> .codebuddy/ -> app/
+// scripts/ -> hot-canvas-to-social/ -> skills/ -> .codebuddy/ -> app/
 const APP_DIR = args.appDir
   ? path.resolve(args.appDir)
   : path.resolve(__dirname, '..', '..', '..', '..');

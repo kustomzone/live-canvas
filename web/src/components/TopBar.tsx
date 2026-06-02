@@ -26,6 +26,7 @@ type Props = {
   onToggleLabels: () => void;
   onToggleEditMode: () => void;
   onToggleWebSearch: () => void;
+  onToggleAutoNarrate: () => void;
   onToggleComposeOnClick: () => void;
   onToggleOrientation: () => void;
   onRegenerate?: () => void;
@@ -38,6 +39,7 @@ type Props = {
   showLabels: boolean;
   editMode: boolean;
   webSearch: boolean;
+  autoNarrate: boolean;
   composeOnClick: boolean;
   orientation: 'landscape' | 'portrait';
   readOnly: boolean;
@@ -49,9 +51,10 @@ export function TopBar(props: Props) {
     view, topic, currentNode, draftTopic, onDraftTopicChange, onSubmitTopic,
     onBackToGallery, onJumpBreadcrumb, onShare, onToggleFullscreen, onToggleChrome,
     onToggleLabels, onToggleWebSearch, onToggleComposeOnClick, onToggleOrientation, onRegenerate,
+    onToggleAutoNarrate,
     onExportPreview,
     attachment, onAttachmentChange,
-    fullscreen, showChrome, showLabels, editMode, webSearch, composeOnClick, orientation, readOnly, busy,
+    fullscreen, showChrome, showLabels, editMode, webSearch, autoNarrate, composeOnClick, orientation, readOnly, busy,
   } = props;
 
   const [lang, setLang] = useLang();
@@ -230,6 +233,9 @@ export function TopBar(props: Props) {
           lang={lang}
           setLang={setLang}
           onToggleWebSearch={!readOnly ? onToggleWebSearch : undefined}
+          // Auto-narrate is a global playback preference — offered on the
+          // canvas view (where narration actually plays), even in read-only.
+          onToggleAutoNarrate={view === 'canvas' ? onToggleAutoNarrate : undefined}
           onToggleLabels={view === 'canvas' ? onToggleLabels : undefined}
           // Edit mode is canvas-only and never offered in read-only preview.
           // TEMPORARILY HIDDEN: pass undefined so the menu item doesn't render.
@@ -254,6 +260,7 @@ export function TopBar(props: Props) {
               ?? (currentNode.gen_inputs?.seed_image ? null : null),
           } : null}
           webSearch={webSearch}
+          autoNarrate={autoNarrate}
           showLabels={showLabels}
           editMode={editMode}
           composeOnClick={composeOnClick}
@@ -277,6 +284,7 @@ type MoreMenuProps = {
   lang: 'zh' | 'en';
   setLang: (l: 'zh' | 'en') => void;
   onToggleWebSearch?: () => void;
+  onToggleAutoNarrate?: () => void;
   onToggleLabels?: () => void;
   onToggleEditMode?: () => void;
   onToggleComposeOnClick?: () => void;
@@ -285,6 +293,7 @@ type MoreMenuProps = {
   onExportPreview?: () => void;
   regenerateInfo?: RegenerateInfo | null;
   webSearch: boolean;
+  autoNarrate: boolean;
   showLabels: boolean;
   editMode: boolean;
   composeOnClick: boolean;
@@ -294,8 +303,8 @@ type MoreMenuProps = {
 function MoreMenu({
   lang, setLang,
   onToggleWebSearch, onToggleLabels, onToggleComposeOnClick, onToggleOrientation, onRegenerate, regenerateInfo,
-  onExportPreview, onToggleEditMode,
-  webSearch, showLabels, editMode, composeOnClick, orientation,
+  onExportPreview, onToggleEditMode, onToggleAutoNarrate,
+  webSearch, autoNarrate, showLabels, editMode, composeOnClick, orientation,
 }: MoreMenuProps) {
   const [open, setOpen] = useState(false);
   const wrapRef = useRef<HTMLDivElement | null>(null);
@@ -337,6 +346,17 @@ function MoreMenu({
   // bottom sheet depending on viewport.
   const menuItems = (
     <>
+      {onExportPreview && (
+        <button
+          type="button"
+          className={styles.moreItem}
+          role="menuitem"
+          onClick={() => { onExportPreview(); setOpen(false); }}
+        >
+          <Icon name="download" size={14} />
+          <span className={styles.moreItemLabel}>{t('topbar.export', lang)}</span>
+        </button>
+      )}
       {onRegenerate && (
         <>
           <button
@@ -443,6 +463,21 @@ function MoreMenu({
           </span>
         </button>
       )}
+      {onToggleAutoNarrate && (
+        <button
+          type="button"
+          className={`${styles.moreItem} ${autoNarrate ? styles.moreItemOn : ''}`}
+          role="menuitemcheckbox"
+          aria-checked={autoNarrate}
+          onClick={() => { onToggleAutoNarrate(); setOpen(false); }}
+        >
+          <Icon name="narrate" size={14} />
+          <span className={styles.moreItemLabel}>{t('topbar.narrate', lang)}</span>
+          <span className={styles.moreItemState} aria-hidden>
+            {autoNarrate ? <Icon name="current" size={10} /> : null}
+          </span>
+        </button>
+      )}
       {onToggleLabels && (
         <button
           type="button"
@@ -503,17 +538,6 @@ function MoreMenu({
           {t(themePref === 'system' ? 'topbar.theme.system' : themePref === 'light' ? 'topbar.theme.light' : 'topbar.theme.dark', lang)}
         </span>
       </button>
-      {onExportPreview && (
-        <button
-          type="button"
-          className={styles.moreItem}
-          role="menuitem"
-          onClick={() => { onExportPreview(); setOpen(false); }}
-        >
-          <Icon name="download" size={14} />
-          <span className={styles.moreItemLabel}>{t('topbar.export', lang)}</span>
-        </button>
-      )}
       <a
         className={styles.moreItem}
         role="menuitem"

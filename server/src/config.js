@@ -38,6 +38,12 @@ export const config = {
   ocrTimeoutMs: Number(process.env.OCR_TIMEOUT_MS || 25_000),
   ocrMinConfidence: Number(process.env.OCR_MIN_CONFIDENCE || 0.4),
   ocrMaxSpans: Number(process.env.OCR_MAX_SPANS || 200),
+  // macOS `say` narration after each image is generated. On by default
+  // (free, fast, offline, only runs if a real PNG was produced). Set
+  // ENABLE_AUDIO=0 to opt out. Synthesises an m4a of the node's
+  // title + caption keyed by hash, served via the assets route.
+  enableAudio: process.env.ENABLE_AUDIO !== '0',
+  audioTimeoutMs: Number(process.env.AUDIO_TIMEOUT_MS || 30_000),
 };
 
 // Map a canvas orientation to its image size string ("WxH"). Anything other

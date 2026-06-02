@@ -40,6 +40,25 @@ assetsRouter.get('/:id/images/:file', (req, res) => {
   fs.createReadStream(resolved).pipe(res);
 });
 
+// Serve a node's synthesised narration audio (macOS `say` → m4a/AAC).
+// file = <hash>.m4a.
+assetsRouter.get('/:id/audio/:file', (req, res) => {
+  const { id, file } = req.params;
+  if (!isSafeId(id)) return res.status(400).json({ error: 'bad_id' });
+  const m = /^([a-f0-9]{12})\.(m4a)$/.exec(file);
+  if (!m) return res.status(400).json({ error: 'bad_file' });
+  const [, hash, ext] = m;
+  const filePath = paths.audioPath(id, hash, ext);
+  const dir = paths.audioDir(id);
+  const resolved = path.resolve(filePath);
+  if (!resolved.startsWith(path.resolve(dir) + path.sep)) {
+    return res.status(400).json({ error: 'bad_path' });
+  }
+  if (!fs.existsSync(resolved)) return res.status(404).json({ error: 'not_found' });
+  res.type('audio/mp4');
+  fs.createReadStream(resolved).pipe(res);
+});
+
 // Serve a user-uploaded seed image from the canvas's uploads/ dir. Used by
 // the Regenerate info popover to show the seed thumbnail / full view.
 // `file` = <basename>.<ext> where basename matches what persistUpload wrote

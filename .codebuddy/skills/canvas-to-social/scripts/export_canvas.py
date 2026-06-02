@@ -1,21 +1,23 @@
 #!/usr/bin/env python3
 """
-把一个 flipbook 画册导出为抖音图文素材包。
+把一个 flipbook 画册导出为社交平台图文素材包（平台无关）。
 
 从 flipbook-skill 数据存储读取画册，生成一个文件夹，内含：
   - images/   : 节点 PNG，按 BFS（根节点优先）顺序重命名为 "NN-标题.png"
   - 文案.md    : 主帖正文（根节点图说 + 话题标签）+ 逐图说明
   - manifest.json : 序号 -> 节点hash / 标题 / 图片 / 文案 的索引
 
+导出包与具体平台无关，可复用于抖音等任意目标平台；发布阶段按平台分流。
+
 用法:
   export_canvas.py CANVAS_ID
   export_canvas.py CANVAS_ID --data-root /path/to/server/data --out /path/to/out
-  export_canvas.py CANVAS_ID --limit 35      # 只保留前 N 个节点（抖音上限）
+  export_canvas.py CANVAS_ID --limit 35      # 只保留前 N 个节点（抖音上限 35）
   export_canvas.py CANVAS_ID --hashtags "#a #b"
 
 默认值:
   --data-root : $FLIPBOOK_DATA_ROOT 或 ./server/data（相对当前工作目录）
-  --out       : <app根>/douyin-export/<主题>（即 <data-root>/../../douyin-export）
+  --out       : <app根>/social-export/<主题>（即 <data-root>/../../social-export）
 
 本脚本刻意不依赖第三方库（仅标准库），可在任意环境运行。
 """
@@ -57,7 +59,7 @@ def safe_name(s, maxlen=30):
 
 
 def main(argv=None):
-    ap = argparse.ArgumentParser(description="把 flipbook 画册导出为抖音图文素材包")
+    ap = argparse.ArgumentParser(description="把 flipbook 画册导出为社交平台图文素材包")
     ap.add_argument("canvas_id")
     ap.add_argument("--data-root", default=os.environ.get("FLIPBOOK_DATA_ROOT", "server/data"))
     ap.add_argument("--out", default=None)
@@ -78,11 +80,11 @@ def main(argv=None):
     if args.limit and args.limit > 0:
         order = order[:args.limit]
 
-    # Default output lives at the APP ROOT's douyin-export/, not under server/.
+    # Default output lives at the APP ROOT's social-export/, not under server/.
     # data-root is conventionally "<app>/server/data", so the app root is two
     # levels up ("server/data" -> "server" -> "<app>"). Using a single ".."
     # would wrongly nest the export under server/.
-    out_dir = args.out or os.path.join(args.data_root, "..", "..", "douyin-export", safe_name(topic, 60))
+    out_dir = args.out or os.path.join(args.data_root, "..", "..", "social-export", safe_name(topic, 60))
     out_dir = os.path.abspath(out_dir)
     img_out = os.path.join(out_dir, "images")
     if os.path.exists(out_dir):
@@ -95,9 +97,9 @@ def main(argv=None):
     root_node = load_json(node_path(tree["root"])) if os.path.isfile(node_path(tree["root"])) else {}
     root_caption = clean(root_node.get("caption"))
 
-    lines = [f"# 抖音图文文案 · {topic}\n",
+    lines = [f"# 社交图文文案 · {topic}\n",
              f"> 共 {len(order)} 张（抖音图文单条上限 35 张，超出请用 --limit 35 或手动取舍）。\n",
-             "\n## ① 主帖正文（复制到抖音发布框）\n", "```", topic, "", root_caption, ""]
+             "\n## ① 主帖正文（复制到发布框）\n", "```", topic, "", root_caption, ""]
     if args.hashtags.strip():
         lines.append(args.hashtags.strip())
     lines += ["```", "\n## ② 逐图说明（每段对应一张图）\n"]

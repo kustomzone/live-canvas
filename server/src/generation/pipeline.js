@@ -11,6 +11,7 @@ import { hashNode, uniqueNodeId } from '../lib/hash.js';
 import {
   nodeExists, readNode, registerNode, writeNode, countNodes,
 } from '../store/nodeStore.js';
+import { readTree, writeTree } from '../store/treeStore.js';
 import { paths } from '../store/paths.js';
 import { broadcast } from '../sse/hub.js';
 import { SseEvents } from '../sse/events.js';
@@ -21,6 +22,7 @@ import { stubPlannerOutput, stubClickLabel } from './stubPlanner.js';
 import { callDecideSearch, stubDecideSearch } from './decideSearch.js';
 import { searchWeb } from './searchWeb.js';
 import { runOcr } from './ocr.js';
+import { generateAudio } from './audio.js';
 import { generateImageVariants, probeImageSize } from './imageVariants.js';
 import { isHashCancelled } from './cancelRegistry.js';
 import { deleteNodeCascade } from './deleteNode.js';
@@ -338,6 +340,10 @@ function buildPath(parentNode, hash, title) {
 
 function imageUrlFor(canvasId, hash, ext) {
   return `/api/canvas/${canvasId}/images/${hash}.${ext}`;
+}
+
+function audioUrlFor(canvasId, hash, ext = 'm4a') {
+  return `/api/canvas/${canvasId}/audio/${hash}.${ext}`;
 }
 
 // Map an absolute seed-image upload path to its web-accessible URL via the
@@ -900,12 +906,13 @@ async function buildAndRegisterNode({
           spanCount: spans.length,
         });
         if (!spans.length) return;
-        // Re-read (the node may have been mutated by a concurrent hotspot
-        // append on the parent — but this is a freshly-built node, so a
-        // straight overwrite of text_layer is safe) and persist. Re-check
-        // cancellation right before writing in case deletion raced in.
+        // Re-read from disk so we merge onto whatever the audio pass may have
+        // already written (audio + OCR race; both re-register this node).
+        // Re-check cancellation right before writing in case deletion raced in.
         if (isHashCancelled(canvas.id, hash)) return;
-        const updated = { ...node, text_layer: spans };
+        let base = node;
+        try { base = await readNode(canvas.id, hash); } catch { /* fall back to closure node */ }
+        const updated = { ...base, text_layer: spans };
         try {
           await registerNode(canvas.id, updated);
           await recordTextSpans(canvas.id, hash, spans);
@@ -914,6 +921,61 @@ async function buildAndRegisterNode({
         broadcast(canvas, { type: SseEvents.NODE_READY, canvasId: canvas.id, jobId, hash, node: updated });
       })
       .catch((e) => log.warn(`[ocr] ${canvas.id}/${hash}: ${e?.message}`));
+
+    // 3) Narration audio (macOS `say`). The whole flipbook shares one voice
+    //    mood: the ROOT's planner picks `voice_style`, we persist it on the
+    //    tree, and every node reuses it. Re-reads the node before writing so
+    //    it merges with whatever the OCR pass wrote (they race).
+    if (config.enableAudio) {
+      (async () => {
+        let effectiveStyle = plannerJson.voice_style || 'neutral';
+        try {
+          const tree = await readTree(canvas.id);
+          if (!parentNode) {
+            // Root: record the chosen mood for the whole flipbook.
+            if (tree && tree.voice_style !== effectiveStyle) {
+              tree.voice_style = effectiveStyle;
+              await writeTree(canvas.id, tree);
+            }
+          } else if (tree?.voice_style) {
+            // Child: always inherit the flipbook-level mood for consistency.
+            effectiveStyle = tree.voice_style;
+          }
+        } catch { /* tree read failed — fall back to planner's pick */ }
+
+        const audio = await generateAudio({
+          canvasId: canvas.id, hash,
+          title: node.title, caption: node.caption,
+          voiceStyle: effectiveStyle, lang,
+        });
+        if (isHashCancelled(canvas.id, hash)) return;
+        if (!audio.ok) {
+          if (audio.reason && audio.reason !== 'audio disabled') {
+            log.warn(`[audio] ${canvas.id}/${hash}: ${audio.reason}`);
+          }
+          return;
+        }
+        let base = node;
+        try { base = await readNode(canvas.id, hash); } catch { /* fall back to closure node */ }
+        const updated = {
+          ...base,
+          audio: `audio/${hash}.${audio.ext}`,
+          audio_url: audioUrlFor(canvas.id, hash, audio.ext),
+          audio_voice: audio.voice,
+          audio_style: audio.style,
+        };
+        if (isHashCancelled(canvas.id, hash)) return;
+        try {
+          await registerNode(canvas.id, updated);
+        } catch (e) { log.warn(`[audio] persist ${canvas.id}/${hash}: ${e?.message}`); }
+        if (isHashCancelled(canvas.id, hash)) return;
+        broadcast(canvas, {
+          type: SseEvents.AUDIO_READY, canvasId: canvas.id, jobId, hash,
+          audioUrl: updated.audio_url, voice: audio.voice, style: audio.style,
+        });
+        broadcast(canvas, { type: SseEvents.NODE_READY, canvasId: canvas.id, jobId, hash, node: updated });
+      })().catch((e) => log.warn(`[audio] ${canvas.id}/${hash}: ${e?.message}`));
+    }
   }
 
   return { node, cacheHit: false };

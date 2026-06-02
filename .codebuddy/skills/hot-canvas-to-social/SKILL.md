@@ -1,20 +1,23 @@
 ---
-name: hot-canvas-to-douyin
-description: 端到端把网络热点做成画册并发布成抖音图文。先调用 hot-canvas-batch 产出 N 个热点画册（canvas），再基于产出的画册进入 douyin-from-canvas 完成导出+文案润色+多 tab 填充，最后停在「发布」交给用户。触发词：热点做成抖音、批量发抖音图文、热点画册发抖音、canvas 转抖音批量、热搜一键图文、end-to-end douyin。
+name: hot-canvas-to-social
+description: 端到端把网络热点做成画册并发布成社交图文。先调用 hot-canvas-batch 产出 N 个热点画册（canvas），再基于产出的画册进入 canvas-to-social 完成导出+文案润色+多 tab 填充，最后停在「发布」交给用户。触发词：热点做成抖音、批量发抖音图文、热点画册发抖音、canvas 转抖音批量、热搜一键图文、end-to-end social。
 ---
 
-# 热点画册 → 抖音图文 端到端编排 (hot-canvas-to-douyin)
+# 热点画册 → 社交图文 端到端编排 (hot-canvas-to-social)
 
 ## 这是什么
 一个**编排 skill**，把两个已有 skill 串起来跑完整链路：
 
 ```
-WebSearch 热点 → [hot-canvas-batch] 产出 N 个画册 → [douyin-from-canvas] 导出+润色+多tab填充 → 停在发布
+WebSearch 热点 → [hot-canvas-batch] 产出 N 个画册 → [canvas-to-social] 导出+润色+多tab填充 → 停在发布
 ```
 
 它自己不重复实现建册或发布逻辑——而是**按顺序调用**：
 1. **`hot-canvas-batch`**（建册，服务自启自关）。
-2. **`douyin-from-canvas`**（导出 + 浏览器自动化填充）。
+2. **`canvas-to-social`**（导出 + 浏览器自动化填充）。
+
+> 目前发布目标仅支持**抖音**（`canvas-to-social/references/publishing-douyin.md`）。
+> 未来新增平台时，导出阶段不变，只需在阶段 3 增加对应平台的填充流程。
 
 ## 何时使用
 - "收集热点做成画册并发到抖音" / "批量把热搜做成抖音图文" / "一键热点图文"。
@@ -28,8 +31,8 @@ WebSearch 热点 → [hot-canvas-batch] 产出 N 个画册 → [douyin-from-canv
 ## 页面易变，每次自更新
 抖音创作者中心 DOM/class/文案变化快。阶段 3 的所有浏览器选择器都是**实测快照、可能失效**。
 执行时遵循「**先探测 → 失效就按可见文字兜底 → 把新规则用 Edit 回写
-`douyin-from-canvas/references/publishing.md`（及本文件摘要）**」的闭环，保证下次拿到最新规则。
-详见 publishing.md 顶部「自更新约定」。
+`canvas-to-social/references/publishing-douyin.md`（及本文件摘要）**」的闭环，保证下次拿到最新规则。
+详见 publishing-douyin.md 顶部「自更新约定」。
 
 ## 参数
 开工前先和用户确认（用 AskUserQuestion）：
@@ -68,7 +71,7 @@ node ./scripts/latest_canvases.mjs --json
 每个 subagent 的任务：
 1. 跑导出脚本（仅标准库）：
    ```bash
-   # cwd in douyin-from-canvas skill root
+   # cwd in canvas-to-social skill root
    python3 ./scripts/export_canvas.py <canvasId> \
      --data-root /abs/path/to/app/server/data --limit 35
    ```
@@ -80,7 +83,7 @@ node ./scripts/latest_canvases.mjs --json
    - 把改好的标题+正文写回导出目录下一个 `发布文案.md`（或回报给主流程）。
 3. subagent 用 SendMessage 把 `{canvasId, OUT_DIR, 标题, 正文, 图片数}` 回报给 main。
 
-> 字数铁律来自 `douyin-from-canvas/references/publishing.md`：标题≤20、正文≤1000、图片≤35。
+> 字数铁律来自 `canvas-to-social/references/publishing-douyin.md`：标题≤20、正文≤1000、图片≤35。
 
 ## 阶段 3 —— 多 tab 填充（串行，共享一个 Chrome）
 发布要操作用户**已登录**的 Chrome，所有 tab 共享同一个 CDP 会话，**无法真正并行**——
@@ -89,7 +92,7 @@ node ./scripts/latest_canvases.mjs --json
 前置：用户已在自己 Chrome 登录抖音；`browser-harness` CLI 可用（用法见同级
 `browser-harness` skill）。
 
-对每个 canvas 的导出包，**依次**执行（细节严格按 douyin-from-canvas skill 中的 `references/publishing.md` 的第 1-7 步）：
+对每个 canvas 的导出包，**依次**执行（细节严格按 canvas-to-social skill 中的 `references/publishing-douyin.md` 的第 1-7 步）：
 1. `new_tab("https://creator.douyin.com/creator-micro/content/upload?default-tab=3")`
    —— 直接进发布图文页（比从首页找入口更稳）。`wait_for_load()` 后确认是上传页。
 2. `upload_file("input[type=file]", sorted(images/*.png))` 上传（顺序 01..NN）。
@@ -101,7 +104,7 @@ node ./scripts/latest_canvases.mjs --json
    `semi-select-option`）。   抽屉打开后扫 `([\d.]+)万人使用`，**按播放量取前 10 首热门候选，
    再 `random.choice` 随机选一首**（不要固定取第一名），hover 后点「使用」，读到「修改音乐」
    即成功。批量发布时维护 `used_songs` 集合跳过已用歌，保证多条 BGM 各不相同。详见
-   douyin-from-canvas skill 中的 `references/publishing.md` 第 5 步。
+   canvas-to-social skill 中的 `references/publishing-douyin.md` 第 5 步。
 6. 合集：先选合集**再**选音乐（避免下拉浮层挡住音乐入口）。用「不选择合集」文字定位
    `.semi-select` 点开，存在「图解世界」就选，否则跳过（**绝不自动新建**）。
 7. 校验（读回标题字数/正文字数/图片数/合集名/音乐），定位「发布」按钮但**不点**。
@@ -132,6 +135,6 @@ tab 的状态清单，并提示：请逐个检查后自行点「发布」。
   本就只取有图节点的 BFS 顺序。
 - **历史无 url、服务已关**：发布不依赖服务，导出脚本读磁盘即可。要预览画册再另起服务。
 - **坐标漂移**：浏览器步骤每次按文字/placeholder 重新查询元素，绝不跨步骤复用坐标
-  （见 douyin-from-canvas skill 中的 `references/publishing.md` 健壮性要点）。
+  （见 canvas-to-social skill 中的 `references/publishing-douyin.md` 健壮性要点）。
 - **别让 subagent 碰发布**：导出/润色可委托，浏览器填充和发布留在主线程顺序做，且永不
   自动发布。

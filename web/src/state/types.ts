@@ -35,6 +35,12 @@ export type Node = {
   text_layer?: TextSpan[];
   image_w?: number;
   image_h?: number;
+  // Narration audio (macOS `say`). Present once the async audio pass
+  // finishes; audio_url is the assets-route URL for playback.
+  audio?: string;          // relative path (e.g. "audio/<hash>.m4a")
+  audio_url?: string;      // web-accessible URL
+  audio_voice?: string;    // resolved `say` voice name
+  audio_style?: string;    // narration mood the planner chose
   // True if this node was generated with the web-search step enabled.
   // Used by the UI on navigation to default the toggle to the value picked
   // when this node was created.
@@ -85,6 +91,7 @@ export type SseEvent =
   | { type: 'image_ready'; canvasId: string; jobId: string; hash: string; imageUrl: string; fallback: boolean }
   | { type: 'variants_ready'; canvasId: string; jobId: string; hash: string; variants: string[] }
   | { type: 'ocr_done'; canvasId: string; jobId: string; hash: string; spanCount: number }
+  | { type: 'audio_ready'; canvasId: string; jobId: string; hash: string; audioUrl: string; voice?: string; style?: string }
   | { type: 'node_ready'; canvasId: string; jobId: string; hash: string; node: Node }
   | { type: 'tree_updated'; canvasId: string; jobId: string; treeNodeCount: number }
   | { type: 'phase_message'; canvasId: string; jobId: string; messageKey: string; messageEn: string }
@@ -185,6 +192,12 @@ export type AppState = {
   showLabels: boolean;                     // hotspot card overlay visibility
   editMode: boolean;                       // edit hotspots (rename / drag); never in read-only
   webSearch: boolean;                      // ask the planner to consult the web before generating
+  // Auto-narrate: on first visit to a node, automatically play its narration
+  // audio. User-toggleable; persisted to localStorage.
+  autoNarrate: boolean;
+  // Hashes already auto-narrated this session, so returning to a node doesn't
+  // replay automatically (manual play still works). Session-only.
+  narratedHashes: Record<string, true>;
   // Image orientation for the NEXT canvas to be created. Per-canvas: fixed at
   // creation time. When viewing an existing canvas this reflects that
   // canvas's orientation (adopted from its manifest); on the gallery it's the
@@ -243,6 +256,24 @@ export function persistOrientationPref(o: 'landscape' | 'portrait') {
   try { window.localStorage.setItem(ORIENTATION_KEY, o); } catch {}
 }
 
+// localStorage-backed pref for auto-narration. Defaults to ON — the user
+// explicitly asked for narration to play on first entering a node.
+const AUTO_NARRATE_KEY = 'flipbook_auto_narrate';
+function readAutoNarratePref(): boolean {
+  if (typeof window === 'undefined') return true;
+  try {
+    const v = window.localStorage.getItem(AUTO_NARRATE_KEY);
+    if (v === '0') return false;
+    if (v === '1') return true;
+  } catch { /* localStorage unavailable */ }
+  return true;
+}
+
+export function persistAutoNarratePref(on: boolean) {
+  if (typeof window === 'undefined') return;
+  try { window.localStorage.setItem(AUTO_NARRATE_KEY, on ? '1' : '0'); } catch {}
+}
+
 export const initialState: AppState = {
   view: 'gallery',
   canvasId: null,
@@ -263,6 +294,8 @@ export const initialState: AppState = {
   editMode: false,
   webSearch: readWebSearchPref(),
   orientation: readOrientationPref(),
+  autoNarrate: readAutoNarratePref(),
+  narratedHashes: {},
   lastDrillFrom: null,
   rootProgress: null,
 };
