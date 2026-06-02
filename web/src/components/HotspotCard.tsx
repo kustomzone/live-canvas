@@ -9,6 +9,9 @@ type Props = {
   index: number;
   anchor: [number, number];
   onClick: (index: number) => void;
+  // Label font size in px, derived from the displayed image's shortest edge
+  // so labels stay proportional across viewport sizes / orientations.
+  fontPx?: number;
   // When provided, a small ✕ appears in the card's top-right on hover.
   // Hidden in preview / read-only mode by simply not passing this prop.
   onDelete?: (index: number) => void;
@@ -28,7 +31,7 @@ type Props = {
 };
 
 export const HotspotCard = forwardRef<HTMLButtonElement, Props>(function HotspotCard(
-  { hotspot, index, anchor, onClick, onDelete, generating = false,
+  { hotspot, index, anchor, onClick, onDelete, generating = false, fontPx,
     editMode = false, dragging = false, onRename, onDragStart, onDragMove, onDragEnd }: Props,
   ref,
 ) {
@@ -66,7 +69,7 @@ export const HotspotCard = forwardRef<HTMLButtonElement, Props>(function Hotspot
       ref={ref}
       type="button"
       className={cls}
-      style={{ left: pct(anchor[0]), top: pct(anchor[1]) }}
+      style={{ left: pct(anchor[0]), top: pct(anchor[1]), ...(fontPx ? { fontSize: `${fontPx}px` } : {}) }}
       // Stop the pointerdown BEFORE it reaches the stage so the stage doesn't
       // start its long-press timer (and doesn't setPointerCapture, which would
       // swallow our subsequent click).

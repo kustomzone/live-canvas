@@ -8,4 +8,6 @@ docs-pages/
 .env
 .env.local
 *.tsbuildinfo
-
+douyin-export/
+.codebuddy/worktrees/
+topics-history/

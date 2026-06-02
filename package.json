@@ -17,6 +17,7 @@
     "sync-prompts": "node scripts/sync-prompts.mjs",
     "example:publish": "node scripts/example-doc-publish.mjs",
     "serve-preview": "node scripts/serve-preview.mjs",
+    "backfill-variants": "node scripts/backfill-image-variants.mjs",
     "lan:up": "bash scripts/lan-domain-setup.sh",
     "lan:down": "bash scripts/lan-domain-teardown.sh",
     "test": "npm run test --workspaces --if-present",

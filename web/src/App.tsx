@@ -701,7 +701,7 @@ export default function App() {
   const showChromeOrNotFullscreen = !state.fullscreen || state.showChrome;
 
   return (
-    <div className={`${styles.shell} ${state.fullscreen ? styles.fullscreen : ''}`}>
+    <div className={`${styles.shell} ${state.fullscreen ? styles.fullscreen : ''} ${IS_EXPORT ? styles.exportMode : ''}`}>
       <div className={`${styles.window} ${IS_EXPORT ? styles.exportWindow : ''}`}>
         <TopBar
           view={state.view}

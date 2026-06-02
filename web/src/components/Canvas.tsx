@@ -201,6 +201,7 @@ export function Canvas({ canvasId, node, tree, imageLoading, pendingClicks, read
   //       aspect deviates further from 16:9.
   const [imageRect, setImageRect] = useState<{ left: number; top: number; width: number; height: number } | null>(null);
   const [stageHeightPx, setStageHeightPx] = useState(0);
+  const [stageWidthPx, setStageWidthPx] = useState(0);
 
   useLayoutEffect(() => {
     if (!stageRef.current || !hasImage || isSvg) {
@@ -211,6 +212,7 @@ export function Canvas({ canvasId, node, tree, imageLoading, pendingClicks, read
       const stageRect = stageRef.current?.getBoundingClientRect();
       if (!stageRect || stageRect.width === 0 || stageRect.height === 0) return;
       setStageHeightPx(stageRect.height);
+      setStageWidthPx(stageRect.width);
       // We know the image's pixel dims (server-supplied). Compute the
       // contained rect: scale uniformly to fit stage, centre.
       const iw = node?.image_w;
@@ -300,6 +302,18 @@ export function Canvas({ canvasId, node, tree, imageLoading, pendingClicks, read
             return { ...h, anchor_xy: imageToStage(a), leader_xy: imageToStage(l) };
           })))
     : [];
+
+  // Label font size derived from the DISPLAYED image's shortest edge (px).
+  // imageRect is % of the stage; multiply by the stage px size to get the
+  // painted picture's px dimensions, take the shorter side, and scale. Clamped
+  // to [9, 14] so it never exceeds the previous desktop default (14px) nor gets
+  // unreadably small. Falls back to 14px before the first measurement.
+  const dispWpx = imageRect ? (imageRect.width / 100) * stageWidthPx : stageWidthPx;
+  const dispHpx = imageRect ? (imageRect.height / 100) * stageHeightPx : stageHeightPx;
+  const shortEdgePx = Math.min(dispWpx || 0, dispHpx || 0);
+  const labelFontPx = shortEdgePx > 0
+    ? Math.max(8, Math.min(13, Math.round(shortEdgePx * 0.022)))
+    : 13;
 
   // --- Edit-mode hotspot drag handlers. The card forwards pointer events
   // here. We track the start point and convert the px delta into an IMAGE-
@@ -538,7 +552,10 @@ export function Canvas({ canvasId, node, tree, imageLoading, pendingClicks, read
           />
         )}
 
-        {/* Hotspot cards */}
+        {/* Hotspot cards. Label font size scales with the DISPLAYED image's
+            shortest edge so labels stay proportional across viewport sizes
+            and portrait/landscape — instead of a fixed px that looks huge on
+            a small portrait image and tiny on a big landscape one. */}
         <div className={styles.hotspots}>
           {node && layouts.map(({ anchor, idx }) => {
             const nh = node.hotspots[idx]?.next_hash;
@@ -553,6 +570,7 @@ export function Canvas({ canvasId, node, tree, imageLoading, pendingClicks, read
                 index={idx}
                 anchor={anchor}
                 generating={childGenerating}
+                fontPx={labelFontPx}
                 onClick={onHotspotClick}
                 onDelete={!readOnly ? onHotspotDelete : undefined}
                 editMode={editing}
