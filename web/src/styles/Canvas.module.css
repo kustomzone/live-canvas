@@ -150,7 +150,7 @@
   position: absolute;
   inset: 0;
   background:
-    linear-gradient(110deg, rgba(255,255,255,0) 30%, rgba(255,255,255,0.6) 50%, rgba(255,255,255,0) 70%),
+    linear-gradient(110deg, transparent 30%, var(--shimmer-highlight) 50%, transparent 70%),
     var(--bg);
   background-size: 200% 100%;
   animation: shimmer 1.6s infinite linear;
@@ -190,7 +190,7 @@
 .draftingText {
   font-size: clamp(12px, 1.6vw, 15px);
   line-height: 1.7;
-  color: #6F6457;
+  color: var(--muted);
   opacity: 0.6;
   white-space: pre-wrap;
   word-break: break-word;

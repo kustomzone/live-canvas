@@ -14,6 +14,8 @@
      without each component re-hardcoding #fff / #000. */
   --on-accent: #FFFFFF;
   --accent-hover: #000000;
+  /* Loading shimmer highlight sweep — a bright sweep reads on light beige. */
+  --shimmer-highlight: rgba(255, 255, 255, 0.6);
   /* Drives native form controls + scrollbars + the browser UA palette. */
   color-scheme: light;
 }
@@ -35,6 +37,8 @@
   --on-accent: #1F1F1F;
   --accent-hover: #FFFFFF;
   --pill-tint: #2E2920;
+  /* On near-black, a white sweep glares — use a soft warm low-alpha glow. */
+  --shimmer-highlight: rgba(255, 250, 240, 0.06);
   color-scheme: dark;
 }
 
