@@ -57,9 +57,21 @@ function htmlEscape(s) {
 // no build step — matches the flipbook beige aesthetic.
 function renderIndex(examples) {
   const cards = examples.map((e) => {
-    const cover = e.cover ? `${e.id}/${e.cover}` : null;
-    const thumb = cover
-      ? `<img class="thumb" src="${htmlEscape(cover)}" alt="" loading="lazy" />`
+    // Progressive cover: the manifest's cover points at the full PNG
+    // (images/<hash>.png, multi-MB). For the landing grid we instead show the
+    // tiny blur JPEG (~hundreds of bytes) as an instant background placeholder
+    // and fade in the medium JPEG (~100KB) — never the full PNG. Variant files
+    // ship in each example's images/ dir (see buildExport).
+    const coverFull = e.cover ? `${e.id}/${e.cover}` : null;
+    const coverMedium = coverFull && /\.png$/i.test(coverFull)
+      ? coverFull.replace(/\.png$/i, '.medium.jpg') : coverFull;
+    const coverBlur = coverFull && /\.png$/i.test(coverFull)
+      ? coverFull.replace(/\.png$/i, '.blur.jpg') : null;
+    const thumb = coverFull
+      ? `<div class="thumb"${coverBlur ? ` style="background-image:url('${htmlEscape(coverBlur)}')"` : ''}>
+          <img src="${htmlEscape(coverMedium)}" alt="" loading="lazy" decoding="async"
+               onload="this.classList.add('loaded')" />
+        </div>`
       : `<div class="thumb thumbEmpty"></div>`;
     return `      <a class="card" href="${htmlEscape(e.id)}/">
         ${thumb}
@@ -90,7 +102,12 @@ function renderIndex(examples) {
     border-radius:14px; overflow:hidden; text-decoration:none; color:inherit;
     box-shadow:0 2px 10px rgba(0,0,0,0.04); transition:transform 140ms, box-shadow 140ms; }
   .card:hover { transform:translateY(-3px); box-shadow:0 8px 24px rgba(0,0,0,0.10); }
-  .thumb { width:100%; aspect-ratio:16/9; object-fit:cover; display:block; background:var(--bg); }
+  /* Progressive cover: blurred bg placeholder (tiny) + medium img faded in. */
+  .thumb { position:relative; width:100%; aspect-ratio:16/9; display:block; background:var(--bg);
+    background-size:cover; background-position:center; overflow:hidden; }
+  .thumb img { position:absolute; inset:0; width:100%; height:100%; object-fit:cover;
+    opacity:0; transition:opacity 420ms ease; }
+  .thumb img.loaded { opacity:1; }
   .thumbEmpty { display:flex; align-items:center; justify-content:center; color:var(--muted); }
   .meta { padding:12px 14px 14px; }
   .cardTitle { font-size:16px; font-weight:600; line-height:1.35;
