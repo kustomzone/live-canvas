@@ -14,7 +14,6 @@ import { imageUrl } from '../lib/api';
 import { clamp01, pct } from '../lib/geometry';
 import { layOutHotspots } from '../lib/layout';
 import { useLang, t } from '../lib/i18n';
-import { useIsMobile } from '../hooks/useIsMobile';
 import { IS_EXPORT } from '../lib/exportProfile';
 
 const MAX_PARALLEL_PER_NODE = 4;
@@ -66,7 +65,6 @@ const PHASE_KEY: Record<PendingClick['phase'], 'phase.planning' | 'phase.image' 
 
 export function Canvas({ canvasId, node, tree, imageLoading, pendingClicks, readOnly, showChrome, showLabels, editMode = false, fullscreen, enterMode = 'none', originXY, onImageClick, onHotspotClick, onHotspotDelete, onHotspotEdit, onJumpToHash, overlay, onImageRectChange, orientation }: Props) {
   const [lang] = useLang();
-  const isMobile = useIsMobile();
   // Prefer the explicit orientation prop (app state); fall back to the tree
   // for any caller that doesn't pass it.
   const isPortrait = (orientation ?? tree?.orientation) === 'portrait';
@@ -475,11 +473,10 @@ export function Canvas({ canvasId, node, tree, imageLoading, pendingClicks, read
                 draggable={false}
               />
         )}
-        {/* Enlarge / view-image affordance. Shown on mobile (where there's no
-            hover and the image fills a small screen) once a real raster image
-            is present. Stops pointer propagation so it never starts a
-            long-press drilldown. */}
-        {hasImage && !isSvg && !imageLoading && isMobile && (
+        {/* Enlarge / view-image affordance. Shown on every viewport once a
+            real raster image is present. Stops pointer propagation so it
+            never starts a long-press drilldown. */}
+        {hasImage && !isSvg && !imageLoading && (
           <button
             type="button"
             className={styles.enlargeBtn}

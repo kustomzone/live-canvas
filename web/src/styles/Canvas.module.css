@@ -431,6 +431,7 @@
   backdrop-filter: blur(2px);
 }
 
+.enlargeBtn:hover { background: rgba(31, 31, 31, 0.92); }
 .enlargeBtn:active { background: rgba(31, 31, 31, 0.92); }
 .enlargeBtn svg { display: block; width: 15px; height: 15px; }
 
