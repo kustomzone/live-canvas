@@ -49,6 +49,22 @@
 > - `__FLIPBOOK_EXPORT__`：**编译期**常量，决定哪些代码进入产物（tree-shaking）。
 > - `state.readOnly`：**运行时** state，已存在，控制 UI 元素显隐。export 产物中它恒为 `true`，但它本身不能减小包体——所以仍需编译期常量来做代码消除。
 
+### 2.1 export 与 readOnly 是正交维度（重要）
+
+export 渲染**不等价于** readOnly。readOnly 只是「禁用写操作」，而 export 是一个独立的渲染目标，在 readOnly 的基础上还有自己的**品牌/呈现定制**。本设计采用「**readOnly 基底 + 关键品牌点**」策略：
+
+- **基底**：export 复用在线应用的 readOnly 形态（无写操作、无生成 UI、无确认弹窗/toast、无 ClickComposer/编辑态）。
+- **叠加的 export 专属定制**（这些是 readOnly **推导不出**的，必须显式加回，对齐当前 template viewer 的观感）：
+  1. **页脚版权条**：每页底部渲染 "Copyright Flipbook Canvas"，链接到项目仓库。在线应用无此页脚。
+  2. **GitHub 入口直出**：GitHub 作为顶栏右侧直出图标按钮，而非收进 More 菜单。
+  3. **语言固化**：导出时由 payload 的 `lang` 烤死，export 产物**不提供运行时语言切换**（顶栏右侧仅 标签开关 / 全屏 / GitHub）。
+  4. **标签页标题同步**：导航到某节点时 `document.title = node.title`，跟随当前页标题。
+  5. **扁平化顶栏**：无 More 菜单、无「返回图库」、无分享按钮。
+
+> 其余细节（间距、字体等）不强求与 template 像素级一致——只要求上述 5 个关键品牌点重现。这是与用户确认过的保真度档位。
+
+为避免 `if (__FLIPBOOK_EXPORT__)` 散落各处，定制集中到一个 **export 形态配置（profile）**：组件从该 profile 读取「是否显示页脚 / GitHub 是否直出 / 是否允许语言切换 / 顶栏布局变体」等开关。profile 在 export mode 下取 export 值、在线 mode 下取默认值，且其分支由编译期常量驱动以便 tree-shaking。具体接缝位置在实现计划中细化。
+
 ## 3. 构建结构
 
 ### 3.1 npm scripts
@@ -179,7 +195,9 @@ export function imageUrl(canvasId: string, imageRel: string): string {
 }
 ```
 
-### 4.4 被剔除的功能（与当前 template viewer 对齐 = 只读）
+### 4.4 被剔除的功能 + export 专属定制
+
+export 渲染 = **readOnly 基底**（剔除写操作）**+ export 品牌定制**（见 §2.1）。两者正交，不能用单个 `readOnly` 标志覆盖。
 
 通过 `__FLIPBOOK_EXPORT__` 死分支 + 现有 `readOnly` 门控，使以下代码在 export 产物中不被引用进而被消除：
 
@@ -188,7 +206,9 @@ export function imageUrl(canvasId: string, imageRel: string): string {
 - `TopBar` 中的生成 / 重生成 / 分享 / 导出 / 编辑控件（现已大量受 `readOnly` 控制）。
 - `Gallery` 组件（导出产物直接进 canvas 视图，无图库着陆页）。
 
-**保留**（只读浏览所需，与现状 viewer 一致）：热点导航、面包屑（Breadcrumb）、`ImageLightbox`、sources 展示、语言切换、全屏、`ProgressiveImage` 渐进加载、`TextLayer`。
+**保留的只读浏览能力**（与现状一致）：热点导航、面包屑（Breadcrumb）、`ImageLightbox`、sources 展示、全屏、`ProgressiveImage` 渐进加载、`TextLayer`。
+
+**export 专属定制**（在上述基底上叠加，readOnly 推导不出，见 §2.1 的 5 点）：页脚版权条、GitHub 直出、语言固化（移除运行时切换）、`document.title` 跟随、扁平化顶栏。这些通过 export 形态 profile 控制，profile 分支由编译期常量驱动。
 
 > 实现要点：只要写操作 API 函数在 export 分支中不可达，且其 `import` 能被 Rollup 判定为无副作用，即可被消除。门控应做在**调用点 / 组件渲染处**用 `__FLIPBOOK_EXPORT__`，必要时配合动态 import 或条件渲染，确保 Rollup 能静态判定死代码。这部分的具体切割粒度在实现计划中细化，并以构建产物体积验证效果。
 
@@ -222,10 +242,11 @@ export function imageUrl(canvasId: string, imageRel: string): string {
 ## 7. 验证 / 测试
 
 1. **回归**：`npm run build` 产物与改造前对比，在线应用功能不变（SSE、生成、分享、导出按钮均正常）。
-2. **导出产物可离线打开**：`npm run build:export` 后跑 `node scripts/serve-preview.mjs <canvasId>`，浏览器中能浏览、导航、看图、切语言、全屏。
-3. **`file://` 直开**：导出 zip 解压后双击 `index.html`（`file://`）能正常工作。
-4. **tree-shaking 生效**：检查 `dist-export/viewer.js` 不包含 `EventSource`、`/api/canvas` 写操作字符串、`ClickComposer` 等标识；记录包体相对完整应用的减小。
-5. `example-doc-publish.mjs --no-push` 产出的站点与 `serve-preview` 一致。
+2. **导出产物可离线打开**：`npm run build:export` 后跑 `node scripts/serve-preview.mjs <canvasId>`，浏览器中能浏览、导航、看图、全屏。
+3. **export 品牌定制核对**（§2.1 的 5 点）：页脚版权条存在；GitHub 直出在顶栏；无运行时语言切换；导航时标签页标题跟随；顶栏扁平（无 More / 返回 / 分享）。
+4. **`file://` 直开**：导出 zip 解压后双击 `index.html`（`file://`）能正常工作。
+5. **tree-shaking 生效**：检查 `dist-export/viewer.js` 不包含 `EventSource`、`/api/canvas` 写操作字符串、`ClickComposer` 等标识；记录包体相对完整应用的减小。
+6. `example-doc-publish.mjs --no-push` 产出的站点与 `serve-preview` 一致。
 
 ## 8. 风险与权衡
 
