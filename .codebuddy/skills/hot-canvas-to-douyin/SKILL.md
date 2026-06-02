@@ -42,18 +42,18 @@ WebSearch 热点 → [hot-canvas-batch] 产出 N 个画册 → [douyin-from-canv
 ## 阶段 0 —— 选题（你来做，需联网）
 用 WebSearch 搜当日热点，挑 N 个流量高且**非政治敏感**的选题。为每个选题抓具体事实
 （数字、事件、名称）作为下钻 label。把选题写成 `themes.json`（结构见
-`hot-canvas-batch` skill 的 `themes.example.json`）。
+`../hot-canvas-batch/SKILL.md` 中的 `themes.example.json`）。
 
 ## 阶段 1 —— 建册（调用 hot-canvas-batch）
 跑一条命令，脚本自启服务、建册、自关服务、写历史：
 ```bash
-node .codebuddy/skills/hot-canvas-batch/scripts/build_canvases.mjs --themes themes.json
+node ../hot-canvas-batch/scripts/build_canvases.mjs --themes themes.json
 ```
 （`ORIENTATION`/`DRILL_PER`/`RECENT_DAYS` 等 env 见该 skill。近 90 天同主题会被自动去重。）
 
 建完后取本次产出的 canvasId：
 ```bash
-node .codebuddy/skills/hot-canvas-to-douyin/scripts/latest_canvases.mjs --json
+node ./scripts/latest_canvases.mjs --json
 ```
 它读 `topics-history/` 里**最新一次** run.json，并核对每个 canvas 的 images/ 是否真有图
 （`present:true`）。只对 `present` 的 canvas 继续发布。
@@ -68,7 +68,8 @@ node .codebuddy/skills/hot-canvas-to-douyin/scripts/latest_canvases.mjs --json
 每个 subagent 的任务：
 1. 跑导出脚本（仅标准库）：
    ```bash
-   python3 .codebuddy/skills/douyin-from-canvas/scripts/export_canvas.py <canvasId> \
+   # cwd in douyin-from-canvas skill root
+   python3 ./scripts/export_canvas.py <canvasId> \
      --data-root /abs/path/to/app/server/data --limit 35
    ```
    脚本末尾打印 `OUT_DIR=...`（导出目录，含 `images/01-..NN.png` 和 `文案.md`）。
@@ -88,8 +89,7 @@ node .codebuddy/skills/hot-canvas-to-douyin/scripts/latest_canvases.mjs --json
 前置：用户已在自己 Chrome 登录抖音；`browser-harness` CLI 可用（用法见同级
 `browser-harness` skill）。
 
-对每个 canvas 的导出包，**依次**执行（细节严格按
-`douyin-from-canvas/references/publishing.md` 的第 1-7 步）：
+对每个 canvas 的导出包，**依次**执行（细节严格按 douyin-from-canvas skill 中的 `references/publishing.md` 的第 1-7 步）：
 1. `new_tab("https://creator.douyin.com/creator-micro/content/upload?default-tab=3")`
    —— 直接进发布图文页（比从首页找入口更稳）。`wait_for_load()` 后确认是上传页。
 2. `upload_file("input[type=file]", sorted(images/*.png))` 上传（顺序 01..NN）。
@@ -98,10 +98,10 @@ node .codebuddy/skills/hot-canvas-to-douyin/scripts/latest_canvases.mjs --json
 5. **背景音乐（必做）**：音乐入口卡片的真正可点元素是 `.container-right-uW7Pj1`/
    `.action-Q1y01k`，用**原生 `.click()`** 打开抽屉（`click_at_xy` 常无效）。**点之前先确保
    上一步合集下拉已收起**（否则 `.semi-portal` 浮层会盖住音乐入口，命中测试会返回
-   `semi-select-option`）。抽屉打开后扫 `([\d.]+)万人使用`，**按播放量取前 10 首热门候选，
+   `semi-select-option`）。   抽屉打开后扫 `([\d.]+)万人使用`，**按播放量取前 10 首热门候选，
    再 `random.choice` 随机选一首**（不要固定取第一名），hover 后点「使用」，读到「修改音乐」
    即成功。批量发布时维护 `used_songs` 集合跳过已用歌，保证多条 BGM 各不相同。详见
-   publishing.md 第 5 步。
+   douyin-from-canvas skill 中的 `references/publishing.md` 第 5 步。
 6. 合集：先选合集**再**选音乐（避免下拉浮层挡住音乐入口）。用「不选择合集」文字定位
    `.semi-select` 点开，存在「图解世界」就选，否则跳过（**绝不自动新建**）。
 7. 校验（读回标题字数/正文字数/图片数/合集名/音乐），定位「发布」按钮但**不点**。
@@ -132,6 +132,6 @@ tab 的状态清单，并提示：请逐个检查后自行点「发布」。
   本就只取有图节点的 BFS 顺序。
 - **历史无 url、服务已关**：发布不依赖服务，导出脚本读磁盘即可。要预览画册再另起服务。
 - **坐标漂移**：浏览器步骤每次按文字/placeholder 重新查询元素，绝不跨步骤复用坐标
-  （见 publishing.md 健壮性要点）。
+  （见 douyin-from-canvas skill 中的 `references/publishing.md` 健壮性要点）。
 - **别让 subagent 碰发布**：导出/润色可委托，浏览器填充和发布留在主线程顺序做，且永不
   自动发布。

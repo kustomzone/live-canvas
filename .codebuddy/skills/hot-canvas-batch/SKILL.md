@@ -12,7 +12,7 @@ description: 当需要把网络热点/流量高的内容批量做成 flipbook-sk
 2. **建册（脚本全自动）**：`build_canvases.mjs` 自己挑空闲端口启动 flipbook server
    （强制 `ENABLE_CODEBUDDY=1`，用 codebuddy 出图，**不依赖 OpenAI**）→ 逐个建竖版
    画册 → 每册根图 + 10 个 label 下钻 → 写带日期的历史记录 → **无论成功/报错/Ctrl-C
-   都 kill 掉 server**。
+   都 kill 掉 server**。(脚本耗时较长，30min~1h)
 
 ## 何时使用
 - "收集网络热点做成画册" / "批量生成画册" / "热搜做成 canvas"。
@@ -50,7 +50,7 @@ description: 当需要把网络热点/流量高的内容批量做成 flipbook-sk
 ## 阶段二 —— 跑脚本（单条命令，服务自启自关）
 
 ```bash
-node .codebuddy/skills/hot-canvas-batch/scripts/build_canvases.mjs --themes /path/to/themes.json
+node ./scripts/build_canvases.mjs --themes /path/to/themes.json
 ```
 
 脚本会：挑空闲端口 → spawn server → 等就绪 → 去重 → 建册 → 写历史 → kill server。

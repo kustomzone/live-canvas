@@ -11,3 +11,5 @@ docs-pages/
 douyin-export/
 .codebuddy/worktrees/
 topics-history/
+/themes.json
+/themes-*.json
