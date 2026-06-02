@@ -94,6 +94,10 @@ export const messages: Catalogue = {
   'topbar.web.on': { zh: '联网搜索已开启 (点击关闭)', en: 'Web search ON (click to disable)' },
   'topbar.web.off': { zh: '联网搜索已关闭 (点击开启)', en: 'Web search OFF (click to enable)' },
   'topbar.lang.zh': { zh: '语言', en: 'Language' },
+  'topbar.theme': { zh: '主题', en: 'Theme' },
+  'topbar.theme.system': { zh: '跟随系统', en: 'System' },
+  'topbar.theme.light': { zh: '浅色', en: 'Light' },
+  'topbar.theme.dark': { zh: '深色', en: 'Dark' },
   'topbar.attach': { zh: '附加图片(粘贴或选择)', en: 'Attach image (paste or pick)' },
   'topbar.attach.remove': { zh: '移除图片', en: 'Remove image' },
   // Item labels in the More menu — pure noun phrases. The on/off state is

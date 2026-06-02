@@ -7,6 +7,35 @@
   --pill: #FFFFFF;
   --accent: #1F1F1F;
   --topbar-bg: #FAF8F4;
+  /* Warm tint used by hotspot cards (linked/pending states). */
+  --pill-tint: #FFFAF0;
+  /* Text/hover for elements FILLED with --accent / --ink (e.g. the primary
+     submit / confirm buttons). Kept as tokens so dark mode can invert them
+     without each component re-hardcoding #fff / #000. */
+  --on-accent: #FFFFFF;
+  --accent-hover: #000000;
+  /* Drives native form controls + scrollbars + the browser UA palette. */
+  color-scheme: light;
+}
+
+/* Dark palette. Applied when documentElement carries data-theme="dark"
+   (the theme controller sets this; in "system" mode it mirrors the OS
+   prefers-color-scheme and re-applies live when the OS flips day↔night).
+   We keep the warm, earthy character of the light theme — near-black warm
+   surfaces and a warm off-white ink rather than a clinical pure grey. */
+:root[data-theme='dark'] {
+  --bg: #15130F;
+  --paper: #211E18;
+  --ink: #EDE7DB;
+  --muted: #A89C88;
+  --line: rgba(255, 255, 255, 0.10);
+  --pill: #2A261F;
+  --accent: #EDE7DB;
+  --topbar-bg: #1B1813;
+  --on-accent: #1F1F1F;
+  --accent-hover: #FFFFFF;
+  --pill-tint: #2E2920;
+  color-scheme: dark;
 }
 
 * { box-sizing: border-box; }

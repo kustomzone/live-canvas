@@ -1,6 +1,12 @@
 import ReactDOM from 'react-dom/client';
 import App from './App';
 import './styles/global.css';
+import { initTheme } from './lib/theme';
+
+// Apply the persisted / system-derived theme as early as possible so the
+// correct palette paints on the first frame (no light→dark flash) and the
+// live OS day↔night listener is wired before anything renders.
+initTheme();
 
 // Disable mobile pinch-zoom of the PAGE. The canvas provides its own
 // enlarge/zoom view for images, and accidental page zoom (especially the

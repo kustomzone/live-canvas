@@ -67,10 +67,10 @@
 .btnConfirm {
   border-color: var(--ink);
   background: var(--ink);
-  color: #fff;
+  color: var(--on-accent);
 }
 
-.btnConfirm:hover { background: #000; }
+.btnConfirm:hover { background: var(--accent-hover); }
 
 .btnDanger {
   border-color: #C44;

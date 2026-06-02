@@ -86,7 +86,7 @@
 .submitBtn {
   border: 0;
   background: var(--ink);
-  color: #fff;
+  color: var(--on-accent);
   cursor: pointer;
   padding: 0;
   width: 28px;
@@ -97,4 +97,4 @@
   justify-content: center;
 }
 
-.submitBtn:hover { background: #000; }
+.submitBtn:hover { background: var(--accent-hover); }

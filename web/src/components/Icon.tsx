@@ -31,6 +31,9 @@ import {
   Download,            // ⬇ download image
   ZoomIn,              // 🔍 enlarge / open image view
   Pencil,              // ✎ edit mode (rename / drag hotspots)
+  Sun,                 // ☀ theme: light
+  Moon,                // ☾ theme: dark
+  Monitor,             // 🖥 theme: follow system
 } from 'lucide-react';
 import type { LucideProps } from 'lucide-react';
 
@@ -65,6 +68,9 @@ const REGISTRY = {
   download: Download,
   'zoom-in': ZoomIn,
   edit: Pencil,
+  'theme-light': Sun,
+  'theme-dark': Moon,
+  'theme-system': Monitor,
 } as const;
 
 export type IconName = keyof typeof REGISTRY;

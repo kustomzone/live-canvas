@@ -176,7 +176,7 @@
 .coverPlaceholder {
   width: 100%;
   aspect-ratio: 16 / 9;
-  background: linear-gradient(135deg, #F5EFE6 0%, #ECE2D2 100%);
+  background: linear-gradient(135deg, var(--bg) 0%, var(--pill) 100%);
   display: flex;
   align-items: center;
   justify-content: center;

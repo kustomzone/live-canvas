@@ -53,11 +53,11 @@
 .hotspot.pending {
   opacity: 0.85;
   border-style: dashed;
-  background: #FFFAF0;
+  background: var(--pill-tint);
 }
 
 .hotspot.linked {
-  background: #FFFAF0;
+  background: var(--pill-tint);
 }
 
 /* Edit mode: card is draggable (move cursor) + tinted to read as editable. */

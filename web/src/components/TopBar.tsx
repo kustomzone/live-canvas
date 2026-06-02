@@ -3,6 +3,7 @@ import { createPortal } from 'react-dom';
 import styles from '../styles/TopBar.module.css';
 import type { Node } from '../state/types';
 import { useLang, t, displayTopic } from '../lib/i18n';
+import { useTheme, nextThemePref } from '../lib/theme';
 import { Icon } from './Icon';
 import { selectionFromClipboard, selectionFromFileList, type ImageSelection } from '../lib/imageUpload';
 import { useIsMobile } from '../hooks/useIsMobile';
@@ -299,6 +300,9 @@ function MoreMenu({
   const [open, setOpen] = useState(false);
   const wrapRef = useRef<HTMLDivElement | null>(null);
   const isMobile = useIsMobile();
+  // Theme preference (system / light / dark). Toggled inline; keeping the
+  // menu open lets the user cycle and watch the palette change live.
+  const { pref: themePref, setPref: setThemePref } = useTheme();
   // Lightbox for viewing the seed image full-size from the regenerate info.
   const [lightboxUrl, setLightboxUrl] = useState<string | null>(null);
 
@@ -479,6 +483,24 @@ function MoreMenu({
         <span className={styles.moreItemLabel}>{t('topbar.lang.zh', lang)}</span>
         <span className={styles.moreItemStateText} aria-hidden>
           {lang === 'zh' ? 'English' : '中文'}
+        </span>
+      </button>
+      {/* Theme cycle: system → light → dark → system. The icon reflects the
+          current preference; the trailing text names it. (The export build
+          hides the More menu, but still auto-follows the system theme.) */}
+      <button
+        type="button"
+        className={styles.moreItem}
+        role="menuitem"
+        onClick={() => { setThemePref(nextThemePref(themePref)); }}
+      >
+        <Icon
+          name={themePref === 'system' ? 'theme-system' : themePref === 'light' ? 'theme-light' : 'theme-dark'}
+          size={14}
+        />
+        <span className={styles.moreItemLabel}>{t('topbar.theme', lang)}</span>
+        <span className={styles.moreItemStateText} aria-hidden>
+          {t(themePref === 'system' ? 'topbar.theme.system' : themePref === 'light' ? 'topbar.theme.light' : 'topbar.theme.dark', lang)}
         </span>
       </button>
       {onExportPreview && (
