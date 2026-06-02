@@ -66,7 +66,12 @@ node ./scripts/build_canvases.mjs --themes /path/to/themes.json
 | `ORIENTATION` | `portrait` | 画册方向，竖版/横版 |
 | `RECENT_DAYS` | `90` | 去重时间窗（近 N 天同主题跳过） |
 | `DRILL_PER` | `10` | 每册下钻子节点数 |
+| `ENABLE_OCR` | `0`（关） | 建册默认关掉 Apple Vision OCR 文字层；设 `1` 重新开启 |
+| `ENABLE_AUDIO` | `0`（关） | 建册默认关掉 macOS `say` 旁白音频；设 `1` 重新开启 |
 | `DRY_RUN=1` | — | 起服务→打印去重计划→关服务，不建册（用于验证 themes/去重）|
+
+> 注：批量建册默认关闭 OCR 与音频——下游 canvas-to-social 导出不消费文字层/旁白，
+> 且二者各自给每张图增加一次额外处理开销。需要时用 `ENABLE_OCR=1` / `ENABLE_AUDIO=1` 开回。
 
 建议先 `DRY_RUN=1` 跑一遍确认选题不会被去重命中，再正式建。
 

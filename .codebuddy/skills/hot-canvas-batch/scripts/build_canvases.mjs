@@ -22,6 +22,11 @@
 //   ORIENTATION         portrait | landscape (default portrait).
 //   RECENT_DAYS         dedup window in days (default 90).
 //   DRILL_PER           drilldown children per canvas (default 10).
+//   ENABLE_OCR          1 to re-enable Apple Vision OCR (default 0 — off for
+//                       batch builds; the social-export pipeline doesn't use
+//                       the text layer and OCR adds per-image latency).
+//   ENABLE_AUDIO        1 to re-enable macOS `say` narration (default 0 —
+//                       off for batch builds for the same reason).
 //   DRY_RUN=1           start server, print dedup plan, build nothing, stop server.
 
 import fs from 'node:fs/promises';
@@ -56,6 +61,11 @@ const ORIENTATION = process.env.ORIENTATION || 'portrait';
 const RECENT_DAYS = Number(process.env.RECENT_DAYS || 90);
 const DRILL_PER = Number(process.env.DRILL_PER || 10);
 const DRY_RUN = process.env.DRY_RUN === '1';
+// OCR + audio are OFF by default for batch builds: the downstream
+// social-export pipeline doesn't consume the text layer or narration, and
+// both add per-image overhead. Opt back in with ENABLE_OCR=1 / ENABLE_AUDIO=1.
+const ENABLE_OCR = process.env.ENABLE_OCR === '1' ? '1' : '0';
+const ENABLE_AUDIO = process.env.ENABLE_AUDIO === '1' ? '1' : '0';
 
 const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
 
@@ -108,6 +118,9 @@ async function startServer(port) {
       ...process.env,
       ENABLE_CODEBUDDY: '1',
       IMAGE_PROVIDER: 'codebuddy',
+      // Skip the post-image OCR / narration passes by default (see flags above).
+      ENABLE_OCR,
+      ENABLE_AUDIO,
       PORT: String(port),
       HOST: '127.0.0.1',
     },
