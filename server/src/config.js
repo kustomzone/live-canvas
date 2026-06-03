@@ -38,10 +38,12 @@ export const config = {
   ocrTimeoutMs: Number(process.env.OCR_TIMEOUT_MS || 25_000),
   ocrMinConfidence: Number(process.env.OCR_MIN_CONFIDENCE || 0.4),
   ocrMaxSpans: Number(process.env.OCR_MAX_SPANS || 200),
-  // macOS `say` narration after each image is generated. On by default
-  // (free, fast, offline, only runs if a real PNG was produced). Set
-  // ENABLE_AUDIO=0 to opt out. Synthesises an mp3 of the node's
-  // title + caption keyed by hash, served via the assets route.
+  // Narration audio synthesised after each image is generated, using Microsoft
+  // Edge online neural voices (msedge-tts). On by default (free, no API key,
+  // needs network; only runs if a real PNG was produced). Set ENABLE_AUDIO=0 to
+  // opt out. Synthesises an mp3 of the node's title + caption keyed by hash,
+  // served via the assets route. The voice is a concrete Edge ShortName picked
+  // per flipbook (default zh-CN-XiaoxiaoNeural / en-US-AriaNeural).
   enableAudio: process.env.ENABLE_AUDIO !== '0',
   audioTimeoutMs: Number(process.env.AUDIO_TIMEOUT_MS || 30_000),
 };

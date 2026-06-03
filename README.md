@@ -119,6 +119,13 @@ Most "AI画图" demos stop at one image. This one turns each image into a
   with Apple Vision (`zh-Hans` + `en-US`) and overlaid as invisible HTML, so
   users can drag-select and Cmd-C copy any text directly off the picture
   while the painted pixels remain the visual ground truth.
+- 🔊 **Voice narration**: each node's title + caption is synthesised to speech
+  with **Microsoft Edge neural voices** (msedge-tts — free, no API key). Pick a
+  **character voice** per flipbook from the live Edge catalogue (filtered to the
+  UI language); the picker reads "晓晓 · 女声" instead of raw locale IDs.
+  Switching voices re-narrates the whole book and restarts in-flight playback.
+  **Auto-narration is on by default** (toggleable) and is bundled into exports
+  so the static site speaks offline too.
 - 📱 **Mobile responsive**: sticky top bar that pins on scroll, single-column
   gallery, pinch-zoom image lightbox, smaller hotspots and pending bubbles.
 
@@ -135,6 +142,7 @@ modalities are wired end-to-end:
 | 🖼️ **Image generation** | turns a structured prompt into a 2752×1536 annotated diagram with bake-in text labels | OpenAI, Nano Banana (Gemini), Seedream/Seeddance, or your own provider |
 | 🌐 **Web search** | rephrased query → top-N normalized results → planner context + 📚 sources panel | any search backend |
 | 👁️ **OCR (Apple Vision)** | `zh-Hans` + `en-US` recognition over every generated PNG, projected as a selectable HTML overlay | local, no API keys needed |
+| 🔊 **TTS (Edge neural voices)** | synthesises each node's title + caption to an mp3, per-flipbook character voice | Microsoft Edge online voices via msedge-tts, no API key |
 
 The image layer is a **provider chain** (`IMAGE_PROVIDER=...,svg`) — first
 enabled provider wins, `svg` is always appended last as a placeholder so the
@@ -293,7 +301,9 @@ directly from `file://` with zero network requests.
 The exported viewer mirrors the live read-only preview: image stage with
 collision-avoiding hotspot labels, leader lines, selectable OCR text overlay,
 caption, breadcrumb, catalog and sources — plus progressive image loading,
-scene transitions, and next-layer image prefetch. It never calls the server.
+scene transitions, and next-layer image prefetch. **Per-node narration mp3s are
+bundled too**, so the static site auto-narrates offline (toggleable in the top
+bar). It never calls the server.
 
 ## 🔗 Share / preview links
 
@@ -375,6 +385,8 @@ exact options and your IP).
 | `ENABLE_OCR` | 1 | run Apple Vision OCR on each generated PNG to produce a selectable text overlay; set to `0` to skip |
 | `OCR_TIMEOUT_MS` | 25000 | per-call OCR timeout |
 | `OCR_MIN_CONFIDENCE` | 0.4 | drop OCR spans below this confidence |
+| `ENABLE_AUDIO` | 1 | synthesise Edge neural-voice narration (mp3) for each node; set to `0` to skip. Non-blocking — failures never stop image generation |
+| `AUDIO_TIMEOUT_MS` | 30000 | per-call TTS synthesis timeout |
 
 ---
 

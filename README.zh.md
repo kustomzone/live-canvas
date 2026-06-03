@@ -105,6 +105,11 @@
   数据等）会用 Apple Vision OCR 一遍（`zh-Hans` + `en-US`），把识别出来的
   文本作为透明 HTML 层覆盖在图片上 —— 看起来还是手绘的画风，但用户可以
   直接在图上拖选、Cmd-C 复制任意文字。
+- 🔊 **语音旁白**：每个节点的标题 + 图说会用 **微软 Edge 神经网络音色**
+  （msedge-tts，免费、无需 API key）合成语音。可按画册从线上 Edge 音色列表里
+  挑一个**角色音色**（按界面语言过滤），列表直接显示「晓晓 · 女声」而非生硬的
+  locale 标识。切换音色会重新朗读整本并打断/重启当前播放。**默认开启自动朗读**
+  （可关闭），并随导出打包进静态站点，离线也能朗读。
 - 📱 **移动端适配**：顶栏滚动吸顶、单列画廊、图片可双指缩放的灯箱、热点和待处理
   气泡按比例缩小。
 
@@ -120,6 +125,7 @@ Flipbook Canvas 围绕一条**可插拔的多模态流水线**搭建。端到端
 | 🖼️ **图像生成** | 把结构化 prompt 转成 2752×1536 的带文字标注图鉴 | OpenAI、Nano Banana（Gemini）、Seedream/Seeddance，或你自己的 provider |
 | 🌐 **联网搜索** | 改写 query → top-N 归一化结果 → 喂给 planner + 📚 来源面板 | 任意搜索后端 |
 | 👁️ **OCR（Apple Vision）** | 对每张生成的 PNG 跑 `zh-Hans` + `en-US` 识别，叠出可选文字层 | 本地，无需 API key |
+| 🔊 **TTS（Edge 神经网络音色）** | 把每个节点的标题 + 图说合成成 mp3 旁白，按画册选角色音色 | 微软 Edge 线上音色（msedge-tts），无需 API key |
 
 图像层是一条 **provider 链**（`IMAGE_PROVIDER=...,svg`）—— 第一个被启用的
 provider 胜出，`svg` 始终作为兜底追加在末尾，即使所有上游模型都挂了 UI 也不
@@ -268,7 +274,8 @@ planner 之前的关卡（`decideSearch.js` + `prompts/decide-search.md`）会�
 
 导出的 viewer 完整还原站内只读预览：图片舞台 + 防重叠的热点标签、引导线、可选中
 的 OCR 文本层、图说、面包屑、目录与来源 —— 并带渐进式图片加载、场景切换动效、
-下一层图片预加载。全程不请求服务端。
+下一层图片预加载。**每个节点的旁白 mp3 也会一并打包**，因此静态站点离线也能
+自动朗读（可在顶栏关闭）。全程不请求服务端。
 
 ## 🔗 分享 / 预览链接
 
@@ -344,6 +351,8 @@ bash scripts/lan-domain-setup.sh studio.lan 5173 8787
 | `ENABLE_OCR` | 1 | 是否对每张生成的 PNG 跑一次 Apple Vision OCR 以做出可选可复制的文字层；设为 `0` 关闭 |
 | `OCR_TIMEOUT_MS` | 25000 | 单次 OCR 超时 |
 | `OCR_MIN_CONFIDENCE` | 0.4 | 低于该置信度的 OCR 结果会被丢弃 |
+| `ENABLE_AUDIO` | 1 | 是否为每个节点合成 Edge 神经网络音色旁白（mp3）；设为 `0` 关闭。非阻塞 —— 合成失败不会影响出图 |
+| `AUDIO_TIMEOUT_MS` | 30000 | 单次 TTS 合成超时 |
 
 ---
 
