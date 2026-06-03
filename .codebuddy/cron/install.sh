@@ -10,15 +10,14 @@
 #   ./install.sh hot-canvas-to-social.sh "0 11 * * *" hot-canvas-to-social
 #   ./install.sh /abs/path/run-foo.sh "30 9 * * 1-5" foo
 #
-# 省略 cron表达式默认 "0 10 * * *";省略 job名默认取业务脚本文件名(去扩展名)。
+# 省略 cron表达式默认 "0 9 * * *";省略 job名默认取业务脚本文件名(去扩展名)。
 set -u
 
 SCRIPT_DIR="${0:A:h}"             # .../.codebuddy/cron
 WRAPPER="${SCRIPT_DIR}/wrapper.sh"
 
 TARGET_ARG="${1:-}"
-SCHEDULE="${2:-0 10 * * *}"
-# SCHEDULE="${2:-22 12 * * *}"
+SCHEDULE="${2:-0 9 * * *}"
 JOB="${3:-}"
 
 if [[ -z "$TARGET_ARG" ]]; then
