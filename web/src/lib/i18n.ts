@@ -106,18 +106,13 @@ export const messages: Catalogue = {
   'topbar.narrate': { zh: '自动朗读', en: 'Auto-narrate' },
   'canvas.narrate.play': { zh: '朗读', en: 'Play narration' },
   'canvas.narrate.stop': { zh: '停止朗读', en: 'Stop narration' },
-  // Voice picker (narration mood). The list is server-owned; these are the
-  // user-facing labels for each abstract style id.
+  // Voice picker (narration). The candidate voices come from Edge's online
+  // catalogue and are labelled by their own displayName, so only the static
+  // chrome is translated here.
   'topbar.voice': { zh: '朗读音色', en: 'Narration voice' },
-  'topbar.voice.auto': { zh: '自动(随主题)', en: 'Auto (by topic)' },
-  'voice.auto': { zh: '自动(随主题)', en: 'Auto (by topic)' },
-  'voice.neutral': { zh: '中性', en: 'Neutral' },
-  'voice.cheerful': { zh: '欢快', en: 'Cheerful' },
-  'voice.serious': { zh: '严肃', en: 'Serious' },
-  'voice.gentle': { zh: '温柔', en: 'Gentle' },
-  'voice.dramatic': { zh: '戏剧', en: 'Dramatic' },
-  'voice.mysterious': { zh: '神秘', en: 'Mysterious' },
-  'voice.energetic': { zh: '活力', en: 'Energetic' },
+  'voice.default': { zh: '默认音色', en: 'Default voice' },
+  'voice.preview': { zh: '试听', en: 'Preview voice' },
+  'voice.preview.stop': { zh: '停止试听', en: 'Stop preview' },
   'toast.voice.changing': { zh: '正在重新生成朗读…', en: 'Re-synthesising narration…' },
   'topbar.voice.resynth': { zh: '正在用新音色重新生成朗读…', en: 'Re-synthesising narration with the new voice…' },
   'topbar.voice.resynth.done': { zh: '朗读已更新', en: 'Narration updated' },

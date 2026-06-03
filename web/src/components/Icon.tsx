@@ -35,6 +35,7 @@ import {
   Moon,                // ☾ theme: dark
   Monitor,             // 🖥 theme: follow system
   Volume2,             // 🔊 narration / auto-narrate toggle
+  VolumeX,             // 🔇 auto-narrate OFF
   Play,                // ▶ play narration
   Square,              // ■ stop narration
 } from 'lucide-react';
@@ -75,6 +76,7 @@ const REGISTRY = {
   'theme-dark': Moon,
   'theme-system': Monitor,
   narrate: Volume2,
+  'narrate-off': VolumeX,
   play: Play,
   stop: Square,
 } as const;

@@ -120,6 +120,7 @@ async function sweepCanvas(canvasId) {
     await unlinkIfExists(paths.imagePath(canvasId, h, 'png'));
     await unlinkIfExists(paths.imagePath(canvasId, h, 'svg'));
     await unlinkIfExists(paths.audioPath(canvasId, h, 'm4a'));
+    await unlinkIfExists(paths.audioPath(canvasId, h, 'mp3'));
   }
 
   // tree.json: drop dead entries + scrub children[] references.

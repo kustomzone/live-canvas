@@ -22,12 +22,9 @@ prompt that primes a richly-annotated diagram and a substantial reading text.
 {
   "title": "max 60 chars, shown at top of canvas",
   "caption": "150–220 chars dense paragraph; encyclopedia register; concrete facts and numbers",
-  "image_prompt": "scene description with 6+ visually rich, individually annotatable zones; do NOT include style suffix",
-  "voice_style": "one of: neutral | cheerful | serious | gentle | dramatic | mysterious | energetic"
+  "image_prompt": "scene description with 6+ visually rich, individually annotatable zones; do NOT include style suffix"
 }
 ```
-
-The `voice_style` controls how this flipbook's narration is voiced. **Pick the mood that best fits the subject's overall tone** — e.g. a fun pop-culture topic → `cheerful` or `energetic`; history/science reference → `serious` or `neutral`; nature/poetry → `gentle`; legends/space/the unknown → `mysterious` or `dramatic`. This is only meaningful on the ROOT page (depth 0); the whole flipbook reuses the root's choice so its voice stays consistent. When unsure, use `neutral`.
 
 ## Rules
 

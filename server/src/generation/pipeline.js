@@ -22,7 +22,7 @@ import { stubPlannerOutput, stubClickLabel } from './stubPlanner.js';
 import { callDecideSearch, stubDecideSearch } from './decideSearch.js';
 import { searchWeb } from './searchWeb.js';
 import { runOcr } from './ocr.js';
-import { generateAudio, detectLang, VOICE_STYLES, DEFAULT_VOICE_STYLE } from './audio.js';
+import { generateAudio, detectLang, DEFAULT_VOICE } from './audio.js';
 import { generateImageVariants, probeImageSize } from './imageVariants.js';
 import { isHashCancelled } from './cancelRegistry.js';
 import { deleteNodeCascade } from './deleteNode.js';
@@ -342,35 +342,39 @@ function imageUrlFor(canvasId, hash, ext) {
   return `/api/canvas/${canvasId}/images/${hash}.${ext}`;
 }
 
-function audioUrlFor(canvasId, hash, ext = 'm4a') {
-  return `/api/canvas/${canvasId}/audio/${hash}.${ext}`;
+function audioUrlFor(canvasId, hash, ext = 'm4a', version = null) {
+  const base = `/api/canvas/${canvasId}/audio/${hash}.${ext}`;
+  return version ? `${base}?v=${encodeURIComponent(version)}` : base;
 }
 
-// Re-narrate EVERY node in a canvas with a new flipbook-level voice mood.
-// Used by the "change voice" control in the TopBar: the user picks a new
-// style and we re-synthesise all already-generated nodes so the whole book
-// stays consistent. Persists tree.voice_style first (so any in-flight or
-// future node also adopts it), then walks tree.nodes, regenerating audio
-// sequentially (macOS `say` is single-process; serial keeps it tame) and
-// broadcasting AUDIO_READY + NODE_READY per node so live viewers update.
-// Returns { ok, style, updated, failed }.
-export async function resynthesizeCanvasAudio(canvas, voiceStyle) {
-  const style = VOICE_STYLES.includes(voiceStyle) ? voiceStyle : DEFAULT_VOICE_STYLE;
-  if (!config.enableAudio) return { ok: false, reason: 'audio disabled', style };
+// Re-narrate EVERY node in a canvas with a new flipbook-level voice.
+// Used by the "change voice" control in the TopBar: the user picks a new Edge
+// voice (ShortName) and we re-synthesise all already-generated nodes so the
+// whole book stays consistent. Persists tree.voice_style first (so any
+// in-flight or future node also adopts it), then walks tree.nodes,
+// regenerating audio sequentially and broadcasting AUDIO_READY + NODE_READY
+// per node so live viewers update. Returns { ok, voice, updated, failed }.
+export async function resynthesizeCanvasAudio(canvas, voice) {
+  if (!config.enableAudio) return { ok: false, reason: 'audio disabled', voice };
 
-  // Pin the new mood on the tree so it's authoritative for everyone.
+  // Pin the new voice on the tree so it's authoritative for everyone.
   let tree;
   try {
     tree = await readTree(canvas.id);
   } catch {
-    return { ok: false, reason: 'tree read failed', style };
+    return { ok: false, reason: 'tree read failed', voice };
   }
-  tree.voice_style = style;
+  tree.voice_style = voice;
   await writeTree(canvas.id, tree);
 
   const hashes = Object.keys(tree.nodes || {});
   let updated = 0;
   let failed = 0;
+  // Cache-bust token for this resynth pass: the audio file is rewritten in
+  // place (same <hash>.mp3 path), so without a changing query param the
+  // browser (and React's audio_url diff) would keep the OLD voice. One token
+  // per pass is enough — every node gets the same fresh ?v=.
+  const version = `${voice}-${Date.now()}`;
   for (const hash of hashes) {
     let node;
     try { node = await readNode(canvas.id, hash); } catch { continue; }
@@ -381,7 +385,7 @@ export async function resynthesizeCanvasAudio(canvas, voiceStyle) {
     const audio = await generateAudio({
       canvasId: canvas.id, hash,
       title: node.title, caption: node.caption,
-      voiceStyle: style, lang,
+      voice, lang,
     });
     if (!audio.ok) { failed++; continue; }
     // Re-read so we merge onto whatever else changed meanwhile.
@@ -390,21 +394,26 @@ export async function resynthesizeCanvasAudio(canvas, voiceStyle) {
     const next = {
       ...base,
       audio: `audio/${hash}.${audio.ext}`,
-      audio_url: audioUrlFor(canvas.id, hash, audio.ext),
+      audio_url: audioUrlFor(canvas.id, hash, audio.ext, version),
       audio_voice: audio.voice,
-      audio_style: audio.style,
+      audio_style: audio.voice,
+      audio_provider: audio.provider,
     };
     try {
       await registerNode(canvas.id, next);
     } catch (e) { log.warn(`[audio] resynth persist ${canvas.id}/${hash}: ${e?.message}`); failed++; continue; }
     updated++;
+    // Audio-only change: broadcast AUDIO_READY so clients refresh the node's
+    // audio in place. We deliberately do NOT broadcast NODE_READY here —
+    // node_ready can auto-navigate the canvas to a freshly-"completed" child
+    // (see reducer), which would yank the page around as each node is
+    // re-synthesised. AUDIO_READY patches audio_url/voice without moving.
     broadcast(canvas, {
       type: SseEvents.AUDIO_READY, canvasId: canvas.id, jobId: 'resynth', hash,
-      audioUrl: next.audio_url, voice: audio.voice, style: audio.style,
+      audioUrl: next.audio_url, voice: audio.voice, style: audio.voice,
     });
-    broadcast(canvas, { type: SseEvents.NODE_READY, canvasId: canvas.id, jobId: 'resynth', hash, node: next });
   }
-  return { ok: true, style, updated, failed };
+  return { ok: true, voice, updated, failed };
 }
 
 // Map an absolute seed-image upload path to its web-accessible URL via the
@@ -984,34 +993,25 @@ async function buildAndRegisterNode({
       .catch((e) => log.warn(`[ocr] ${canvas.id}/${hash}: ${e?.message}`));
   }
 
-  // Narration audio (macOS `say`). Independent of the image — it reads the
-  // node's title + caption — so it runs for every node, including the SVG
-  // fallback (stub mode). The whole flipbook shares one voice mood: the
-  // ROOT's planner picks `voice_style`, we persist it on the tree, and every
-  // node reuses it. Re-reads the node before writing so it merges with
-  // whatever the OCR pass wrote (they race).
+  // Narration audio (Edge neural voices). Independent of the image — it reads
+  // the node's title + caption — so it runs for every node, including the SVG
+  // fallback (stub mode). The whole flipbook shares one voice: the user's
+  // create-time pick (tree.voice_style, an Edge ShortName) or the language
+  // default. Re-reads the node before writing so it merges with whatever the
+  // OCR pass wrote (they race).
   if (config.enableAudio) {
     (async () => {
-      let effectiveStyle = plannerJson.voice_style || 'neutral';
+      let effectiveVoice = null;
       try {
         const tree = await readTree(canvas.id);
-        if (tree?.voice_style) {
-          // A flipbook-level mood is already pinned — either the user chose
-          // one at create time, or the root's planner recorded its pick.
-          // Both root and children defer to it so the voice stays consistent
-          // and a user override is never clobbered by the planner.
-          effectiveStyle = tree.voice_style;
-        } else if (!parentNode && tree) {
-          // Root, no pin yet: record the planner's pick for the whole book.
-          tree.voice_style = effectiveStyle;
-          await writeTree(canvas.id, tree);
-        }
-      } catch { /* tree read failed — fall back to planner's pick */ }
+        effectiveVoice = tree?.voice_style || null;
+      } catch { /* tree read failed — generateAudio falls back to default */ }
+      effectiveVoice = effectiveVoice || DEFAULT_VOICE[lang] || DEFAULT_VOICE.zh;
 
       const audio = await generateAudio({
         canvasId: canvas.id, hash,
         title: node.title, caption: node.caption,
-        voiceStyle: effectiveStyle, lang,
+        voice: effectiveVoice, lang,
       });
       if (isHashCancelled(canvas.id, hash)) return;
       if (!audio.ok) {
@@ -1027,7 +1027,8 @@ async function buildAndRegisterNode({
         audio: `audio/${hash}.${audio.ext}`,
         audio_url: audioUrlFor(canvas.id, hash, audio.ext),
         audio_voice: audio.voice,
-        audio_style: audio.style,
+        audio_style: audio.voice,
+        audio_provider: audio.provider,
       };
       if (isHashCancelled(canvas.id, hash)) return;
       try {
@@ -1036,7 +1037,7 @@ async function buildAndRegisterNode({
       if (isHashCancelled(canvas.id, hash)) return;
       broadcast(canvas, {
         type: SseEvents.AUDIO_READY, canvasId: canvas.id, jobId, hash,
-        audioUrl: updated.audio_url, voice: audio.voice, style: audio.style,
+        audioUrl: updated.audio_url, voice: audio.voice, style: audio.voice,
       });
       broadcast(canvas, { type: SseEvents.NODE_READY, canvasId: canvas.id, jobId, hash, node: updated });
     })().catch((e) => log.warn(`[audio] ${canvas.id}/${hash}: ${e?.message}`));

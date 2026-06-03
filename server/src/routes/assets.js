@@ -40,12 +40,12 @@ assetsRouter.get('/:id/images/:file', (req, res) => {
   fs.createReadStream(resolved).pipe(res);
 });
 
-// Serve a node's synthesised narration audio (macOS `say` → m4a/AAC).
-// file = <hash>.m4a.
+// Serve a node's synthesised narration audio. Edge (neural) writes .mp3,
+// macOS `say` writes .m4a — both are served here. file = <hash>.<ext>.
 assetsRouter.get('/:id/audio/:file', (req, res) => {
   const { id, file } = req.params;
   if (!isSafeId(id)) return res.status(400).json({ error: 'bad_id' });
-  const m = /^([a-f0-9]{12})\.(m4a)$/.exec(file);
+  const m = /^([a-f0-9]{12})\.(m4a|mp3)$/.exec(file);
   if (!m) return res.status(400).json({ error: 'bad_file' });
   const [, hash, ext] = m;
   const filePath = paths.audioPath(id, hash, ext);
@@ -55,7 +55,7 @@ assetsRouter.get('/:id/audio/:file', (req, res) => {
     return res.status(400).json({ error: 'bad_path' });
   }
   if (!fs.existsSync(resolved)) return res.status(404).json({ error: 'not_found' });
-  res.type('audio/mp4');
+  res.type(ext === 'mp3' ? 'audio/mpeg' : 'audio/mp4');
   fs.createReadStream(resolved).pipe(res);
 });
 

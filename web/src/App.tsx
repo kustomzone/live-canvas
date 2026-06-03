@@ -10,7 +10,7 @@ import { Gallery } from './components/Gallery';
 import { ConfirmModal } from './components/ConfirmModal';
 import { ClickComposer } from './components/ClickComposer';
 import { useCanvasSSE } from './hooks/useCanvasSSE';
-import { createCanvas, clickAt, getNode, getTree, createShareLink, resolveShareLink, deleteNode, regenerateNode, cancelHotspot, exportCanvas, updateHotspot, getVoices, setCanvasVoice } from './lib/api';
+import { createCanvas, clickAt, getNode, getTree, createShareLink, resolveShareLink, deleteNode, regenerateNode, cancelHotspot, exportCanvas, updateHotspot, getVoices, setCanvasVoice, type Voice } from './lib/api';
 import { useLang, t, displayTopic } from './lib/i18n';
 import { revokeSelection, type ImageSelection } from './lib/imageUpload';
 import { copyToClipboard } from './lib/clipboard';
@@ -60,11 +60,11 @@ export default function App() {
   // OFF — long-press fires generate immediately; user can enable the
   // compose panel via the More menu).
   const [composeOnClick, setComposeOnClick] = useState(false);
-  // Server-owned narration voice catalog. Fetched once on mount; the client
-  // never invents voice names — it picks an abstract mood from `voiceStyles`.
-  // `voiceEnabled` mirrors the server's ENABLE_AUDIO switch so the picker is
-  // hidden when narration is off server-side.
-  const [voiceStyles, setVoiceStyles] = useState<string[]>([]);
+  // Edge voice catalogue for the current UI language. Fetched on mount and
+  // re-fetched when the language changes. The client picks a concrete voice
+  // (shortName) from `voices`. `voiceEnabled` mirrors the server's ENABLE_AUDIO
+  // switch so the picker is hidden when narration is off server-side.
+  const [voices, setVoices] = useState<Voice[]>([]);
   const [voiceEnabled, setVoiceEnabled] = useState(false);
   // Pending click-composer state. When non-null the floating panel is open
   // anchored at this image-relative xy, capturing label + image attachment.
@@ -94,6 +94,11 @@ export default function App() {
       }
       dispatch({ type: 'set_share_mode', canvasId: 'export', topic: payload.topic, token: 'export' });
       dispatch({ type: 'set_tree', tree: { ...payload.tree, topic: payload.topic, orientation: payload.orientation } as any });
+      // 导出产物离线无服务端，但若任一节点带 audio_url（已随包导出），
+      // 则启用「自动朗读」控件，让用户可在顶栏开关朗读。
+      if (Object.values(payload.nodes).some((n: any) => n?.audio_url)) {
+        setVoiceEnabled(true);
+      }
       // 注入全部节点：导出产物离线，没有 /api/canvas/.../nodes/<hash> 可拉，
       // 所以一次性把 payload 里的每个节点都灌进 state.nodes，热点导航 / 面包屑
       // 跳转才不会回退到 getNode（否则会报 "Load failed: getNode failed: 404"）。
@@ -215,20 +220,21 @@ export default function App() {
     return () => document.removeEventListener('fullscreenchange', handler);
   }, []);
 
-  // Fetch the server's narration voice catalog once on mount (export build
-  // has no server, so skip it there).
+  // Fetch the Edge voice catalogue for the current language. Re-fetched when
+  // the language changes (zh→zh-CN, en→en-US). Export build has no server, so
+  // skip it there.
   useEffect(() => {
     if (IS_EXPORT) return;
     let cancelled = false;
-    getVoices()
+    getVoices(lang)
       .then((v) => {
         if (cancelled) return;
-        setVoiceStyles(v.styles ?? []);
+        setVoices(v.voices ?? []);
         setVoiceEnabled(!!v.enabled);
       })
       .catch(() => { /* narration unavailable — picker stays hidden */ });
     return () => { cancelled = true; };
-  }, []);
+  }, [lang]);
 
   const hydrateCanvas = async (id: string, targetHash: string | null = null) => {
     try {
@@ -284,7 +290,7 @@ export default function App() {
         image: topicAttachment?.file ?? null,
         lang,
         orientation: state.orientation,
-        voiceStyle: state.voiceStyle,
+        voice: state.voiceStyle,
       });
       // Sync the in-memory topic to whatever the server stored. When only
       // an image was uploaded, the server uses '__pending__' as a sentinel
@@ -660,12 +666,15 @@ export default function App() {
   // (the user confirmed they want existing nodes re-narrated). The selection
   // is reflected locally immediately; AUDIO_READY/NODE_READY events stream the
   // refreshed audio per node.
-  const onSelectVoice = useCallback((style: string | null) => {
-    dispatch({ type: 'set_voice_style', voiceStyle: style });
-    // Re-synthesis only applies to an existing canvas with a concrete mood.
-    if (state.view !== 'canvas' || !state.canvasId || state.readOnly || !style) return;
+  const onSelectVoice = useCallback((voice: string | null) => {
+    const onCanvas = state.view === 'canvas' && !!state.canvasId && !state.readOnly;
+    // Gallery sets the create-time default; canvas updates only this book's
+    // voice. They're stored independently so neither leaks into the other.
+    dispatch({ type: 'set_voice_style', voiceStyle: voice, target: onCanvas ? 'canvas' : 'gallery' });
+    // Re-synthesis only applies to an existing canvas with a concrete voice.
+    if (!onCanvas || !voice) return;
     dispatch({ type: 'add_toast', toast: { level: 'info', message: t('topbar.voice.resynth', lang), tag: 'voice', sticky: true } });
-    setCanvasVoice(state.canvasId, style)
+    setCanvasVoice(state.canvasId!, voice)
       .then(() => {
         dispatch({ type: 'remove_toast_by_tag', tag: 'voice' });
         dispatch({ type: 'add_toast', toast: { level: 'info', message: t('topbar.voice.resynth.done', lang) } });
@@ -785,8 +794,8 @@ export default function App() {
           editMode={state.editMode}
           webSearch={state.webSearch}
           autoNarrate={state.autoNarrate}
-          voiceStyle={state.voiceStyle}
-          voiceStyles={voiceStyles}
+          voiceStyle={state.view === 'canvas' ? state.canvasVoiceStyle : state.voiceStyle}
+          voices={voices}
           voiceEnabled={voiceEnabled}
           composeOnClick={composeOnClick}
           readOnly={state.readOnly}

@@ -1,21 +1,18 @@
 // E2E for the user-selectable narration voice feature.
-//   - GET  /api/canvas/voices       → server-owned candidate list (7 moods)
-//   - POST /api/canvas/:id/voice    → validates the mood, pins it on the
-//                                     tree, and re-synthesises node audio.
+//   - GET  /api/canvas/voices       → Edge voice catalogue for a language
+//   - POST /api/canvas/:id/voice    → validates an Edge voice (ShortName),
+//                                     pins it on the tree, and re-synthesises
+//                                     node audio.
 //
-// The candidate list is server-owned, so the client only ever sends an
-// abstract mood; we assert the whitelist rejects raw voice names and unknown
-// ids with 400, missing canvases with 404, and that a valid mood pins
-// tree.voice_style + flips every non-generating node's audio_style.
+// The candidate list comes from Edge's online catalogue (cached), filtered to
+// the requested UI language. We assert the route validates the voice against
+// that list: a valid ShortName is accepted and pinned on tree.voice_style; an
+// unknown value is rejected with 400; missing canvases 404; bad ids 400.
 //
-// Audio is mocked: we don't shell out to macOS `say` in CI. Instead we point
-// the pipeline at a fake generateAudio via the real on-disk node/tree stores,
-// and assert the persisted state changes. To keep this hermetic we DON'T hit
-// the real `say` binary — we set ENABLE_AUDIO and stub the audio module's
-// generateAudio by writing a tiny file and returning ok. Since ESM modules
-// can't be monkey-patched after import, we instead verify the route + tree
-// pinning behaviour (which is the server-owned contract) and rely on the
-// resynth unit path being exercised by generateAudio's own guards.
+// Network independence: listVoices() falls back to a built-in whitelist when
+// Edge is unreachable, so these tests run offline. We therefore assert only
+// that the default voice is present in the returned list (not an exact count),
+// and pin a voice taken from whatever list the server returns.
 
 import test from 'node:test';
 import assert from 'node:assert/strict';
@@ -34,7 +31,7 @@ const { createApp } = await import('../src/app.js');
 const { createCanvas } = await import('../src/store/canvasStore.js');
 const { registerNode } = await import('../src/store/nodeStore.js');
 const { readTree } = await import('../src/store/treeStore.js');
-const { VOICE_STYLES, DEFAULT_VOICE_STYLE } = await import('../src/generation/audio.js');
+const { DEFAULT_VOICE, listVoices } = await import('../src/generation/audio.js');
 const { initDb } = await import('../src/db/index.js');
 
 // createCanvas upserts canvas metadata into SQLite, so the schema must exist.
@@ -63,46 +60,49 @@ async function req(base, method, pathname, body) {
   return { status: res.status, json };
 }
 
-test('GET /api/canvas/voices returns the server-owned candidate list', async () => {
+test('GET /api/canvas/voices returns the Edge voice catalogue for the language', async () => {
   const { base, close } = await startServer();
   try {
-    const { status, json } = await req(base, 'GET', '/api/canvas/voices');
+    const { status, json } = await req(base, 'GET', '/api/canvas/voices?lang=zh');
     assert.equal(status, 200);
     assert.equal(json.enabled, true);
-    assert.equal(json.default, DEFAULT_VOICE_STYLE);
-    assert.deepEqual(json.styles, [...VOICE_STYLES]);
-    assert.equal(json.styles.length, 7);
+    assert.equal(json.default, DEFAULT_VOICE.zh);
+    assert.ok(Array.isArray(json.voices) && json.voices.length > 0, 'voices is a non-empty array');
+    // Each entry carries a concrete Edge ShortName.
+    assert.ok(json.voices.every((v) => typeof v.shortName === 'string' && v.shortName));
+    // The default voice must be one of the offered voices.
+    assert.ok(json.voices.some((v) => v.shortName === json.default), 'default voice is in the list');
+    // Filtered to the language's locale.
+    assert.ok(json.voices.every((v) => v.shortName.startsWith('zh-')), 'zh list only has zh voices');
   } finally {
     await close();
   }
 });
 
-test('POST /api/canvas/:id/voice rejects an unknown mood with 400', async () => {
+test('POST /api/canvas/:id/voice rejects an unknown voice with 400', async () => {
   const { base, close } = await startServer();
   try {
     const c = await createCanvas({ topic: 'T' });
     const { status, json } = await req(base, 'POST', `/api/canvas/${c.id}/voice`, {
-      voiceStyle: 'not-a-real-mood',
+      voice: 'zh-CN-NotARealVoiceNeural',
     });
     assert.equal(status, 400);
-    assert.equal(json.error, 'bad_voice_style');
-    // The error echoes the whitelist so the client can recover.
-    assert.deepEqual(json.styles, [...VOICE_STYLES]);
+    assert.equal(json.error, 'bad_voice');
   } finally {
     await close();
   }
 });
 
-test('POST /api/canvas/:id/voice rejects a raw voice name (not a mood)', async () => {
+test('POST /api/canvas/:id/voice rejects a legacy mood string with 400', async () => {
   const { base, close } = await startServer();
   try {
     const c = await createCanvas({ topic: 'T' });
-    // A real macOS voice name is NOT an accepted value — only abstract moods.
+    // Old "mood" values are no longer accepted — only concrete Edge voices.
     const { status, json } = await req(base, 'POST', `/api/canvas/${c.id}/voice`, {
-      voiceStyle: 'Tingting',
+      voice: 'cheerful',
     });
     assert.equal(status, 400);
-    assert.equal(json.error, 'bad_voice_style');
+    assert.equal(json.error, 'bad_voice');
   } finally {
     await close();
   }
@@ -111,8 +111,9 @@ test('POST /api/canvas/:id/voice rejects a raw voice name (not a mood)', async (
 test('POST /api/canvas/:id/voice on a missing canvas returns 404', async () => {
   const { base, close } = await startServer();
   try {
+    const [v] = await listVoices('zh');
     const { status, json } = await req(base, 'POST', '/api/canvas/nonexistent01/voice', {
-      voiceStyle: 'cheerful',
+      voice: v.shortName,
     });
     assert.equal(status, 404);
     assert.equal(json.error, 'not_found');
@@ -124,8 +125,9 @@ test('POST /api/canvas/:id/voice on a missing canvas returns 404', async () => {
 test('POST /api/canvas/:id/voice with a bad id returns 400', async () => {
   const { base, close } = await startServer();
   try {
+    const [v] = await listVoices('zh');
     const { status, json } = await req(base, 'POST', '/api/canvas/..%2Fetc/voice', {
-      voiceStyle: 'cheerful',
+      voice: v.shortName,
     });
     assert.equal(status, 400);
     assert.equal(json.error, 'bad_id');
@@ -134,7 +136,7 @@ test('POST /api/canvas/:id/voice with a bad id returns 400', async () => {
   }
 });
 
-test('POST /api/canvas/:id/voice accepts a valid mood (202) and pins it on the tree', async () => {
+test('POST /api/canvas/:id/voice accepts a valid Edge voice (202) and pins it on the tree', async () => {
   const { base, close } = await startServer();
   try {
     const c = await createCanvas({ topic: 'Test Topic' });
@@ -147,12 +149,16 @@ test('POST /api/canvas/:id/voice accepts a valid mood (202) and pins it on the t
       depth: 0,
     });
 
+    const voices = await listVoices('zh');
+    // Choose a voice other than the default to make the pin observable.
+    const chosen = voices.find((v) => v.shortName !== DEFAULT_VOICE.zh) || voices[0];
+
     const { status, json } = await req(base, 'POST', `/api/canvas/${c.id}/voice`, {
-      voiceStyle: 'dramatic',
+      voice: chosen.shortName,
     });
     assert.equal(status, 202);
     assert.equal(json.ok, true);
-    assert.equal(json.voiceStyle, 'dramatic');
+    assert.equal(json.voice, chosen.shortName);
 
     // Re-synthesis is fire-and-forget; tree.voice_style is pinned synchronously
     // at the start of resynthesizeCanvasAudio, but the route returns before it
@@ -160,22 +166,22 @@ test('POST /api/canvas/:id/voice accepts a valid mood (202) and pins it on the t
     let pinned = null;
     for (let i = 0; i < 50; i++) {
       const tree = await readTree(c.id);
-      if (tree.voice_style === 'dramatic') { pinned = tree.voice_style; break; }
+      if (tree.voice_style === chosen.shortName) { pinned = tree.voice_style; break; }
       await new Promise((r) => setTimeout(r, 20));
     }
-    assert.equal(pinned, 'dramatic', 'tree.voice_style should be pinned to the new mood');
+    assert.equal(pinned, chosen.shortName, 'tree.voice_style should be pinned to the new voice');
   } finally {
     await close();
   }
 });
 
-test('createCanvas pins a user-chosen create-time voiceStyle onto the tree', async () => {
-  const c = await createCanvas({ topic: 'Pinned', voiceStyle: 'gentle' });
+test('createCanvas pins a user-chosen create-time voice onto the tree', async () => {
+  const c = await createCanvas({ topic: 'Pinned', voice: 'zh-CN-YunxiNeural' });
   const tree = await readTree(c.id);
-  assert.equal(tree.voice_style, 'gentle');
+  assert.equal(tree.voice_style, 'zh-CN-YunxiNeural');
 });
 
-test('createCanvas leaves voice_style null when none is chosen (planner picks later)', async () => {
+test('createCanvas leaves voice_style null when none is chosen', async () => {
   const c = await createCanvas({ topic: 'Unpinned' });
   const tree = await readTree(c.id);
   assert.equal(tree.voice_style, null);

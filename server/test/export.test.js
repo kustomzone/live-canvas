@@ -72,11 +72,16 @@ const PNG = Buffer.from('89504e470d0a1a0a0000000d4948445200000001000000010806000
 async function seedCanvas(id, tree, nodes) {
   await fsp.mkdir(paths.nodeDir(id), { recursive: true });
   await fsp.mkdir(paths.imageDir(id), { recursive: true });
+  await fsp.mkdir(paths.audioDir(id), { recursive: true });
   await fsp.writeFile(paths.treePath(id), JSON.stringify(tree));
   for (const node of nodes) {
     await fsp.writeFile(paths.nodePath(id, node.hash), JSON.stringify(node));
     if (node.image) {
       await fsp.writeFile(path.join(paths.imageDir(id), path.basename(node.image)), PNG);
+    }
+    if (node.audio) {
+      // A >=256-byte blob so buildExport's size guard accepts it as real audio.
+      await fsp.writeFile(path.join(paths.audioDir(id), path.basename(node.audio)), Buffer.alloc(512, 1));
     }
   }
 }
@@ -120,6 +125,7 @@ test('buildCanvasExport bundles a static site for a canvas', async () => {
     {
       hash: rootHash, depth: 0, parent: null, title: '根节点',
       caption: '**粗体**说明', image: `images/${rootHash}.png`,
+      audio: `audio/${rootHash}.mp3`,
       hotspots: [{ label: '去子节点', anchor_xy: [0.3, 0.4], leader_xy: [0.25, 0.5], next_hash: childHash }],
       sources: [{ title: '维基', url: 'https://example.com', snippet: 's', source: 'example.com' }],
       text_layer: [{ text: '标注', bbox: [0.1, 0.1, 0.2, 0.05], confidence: 1 }],
@@ -140,12 +146,18 @@ test('buildCanvasExport bundles a static site for a canvas', async () => {
   }
   assert.ok(entries[`images/${rootHash}.png`], 'root image missing');
   assert.ok(entries[`images/${childHash}.png`], 'child image missing');
+  // Narration audio is bundled and referenced via a relative in-zip path so
+  // the exported viewer can auto-narrate offline.
+  assert.ok(entries[`audio/${rootHash}.mp3`], 'root audio missing from zip');
 
   const payload = parsePayload(entries);
   assert.equal(payload.root, rootHash);
   assert.equal(Object.keys(payload.nodes).length, 2);
   assert.equal(payload.nodes[rootHash].hotspots[0].next_hash, childHash);
   assert.equal(payload.nodes[rootHash].image, `images/${rootHash}.png`);
+  assert.equal(payload.nodes[rootHash].audio_url, `audio/${rootHash}.mp3`);
+  // A node without audio carries a null audio_url (no bundled file).
+  assert.equal(payload.nodes[childHash].audio_url, null);
   assert.equal(payload.nodes[rootHash].text_layer.length, 1);
 
   const html = entries['index.html'].toString('utf8');

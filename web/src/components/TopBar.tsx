@@ -6,6 +6,7 @@ import { useLang, t, displayTopic } from '../lib/i18n';
 import { useTheme, nextThemePref } from '../lib/theme';
 import { Icon } from './Icon';
 import { selectionFromClipboard, selectionFromFileList, type ImageSelection } from '../lib/imageUpload';
+import { voicePreviewUrl, type Voice } from '../lib/api';
 import { useIsMobile } from '../hooks/useIsMobile';
 import { BottomSheet } from './BottomSheet';
 import { BreadcrumbNav } from './BreadcrumbNav';
@@ -27,7 +28,7 @@ type Props = {
   onToggleEditMode: () => void;
   onToggleWebSearch: () => void;
   onToggleAutoNarrate: () => void;
-  onSelectVoice: (style: string | null) => void;
+  onSelectVoice: (voice: string | null) => void;
   onToggleComposeOnClick: () => void;
   onToggleOrientation: () => void;
   onRegenerate?: () => void;
@@ -42,7 +43,7 @@ type Props = {
   webSearch: boolean;
   autoNarrate: boolean;
   voiceStyle: string | null;
-  voiceStyles: string[];
+  voices: Voice[];
   voiceEnabled: boolean;
   composeOnClick: boolean;
   orientation: 'landscape' | 'portrait';
@@ -58,7 +59,7 @@ export function TopBar(props: Props) {
     onToggleAutoNarrate, onSelectVoice,
     onExportPreview,
     attachment, onAttachmentChange,
-    fullscreen, showChrome, showLabels, editMode, webSearch, autoNarrate, voiceStyle, voiceStyles, voiceEnabled, composeOnClick, orientation, readOnly, busy,
+    fullscreen, showChrome, showLabels, editMode, webSearch, autoNarrate, voiceStyle, voices, voiceEnabled, composeOnClick, orientation, readOnly, busy,
   } = props;
 
   const [lang, setLang] = useLang();
@@ -208,6 +209,16 @@ export function TopBar(props: Props) {
             aria-label="Toggle chrome"
           ><Icon name={showChrome ? 'eye' : 'eye-off'} size={14} /></button>
         )}
+        {exportChrome.narrateInTopBar && view === 'canvas' && voiceEnabled && (
+          <button
+            type="button"
+            className={`${styles.miniBtn} ${autoNarrate ? styles.miniBtnOn : ''}`}
+            onClick={onToggleAutoNarrate}
+            title={t('topbar.narrate', lang)}
+            aria-label={t('topbar.narrate', lang)}
+            aria-pressed={autoNarrate}
+          ><Icon name={autoNarrate ? 'narrate' : 'narrate-off'} size={14} /></button>
+        )}
         {exportChrome.labelsInTopBar && view === 'canvas' && (
           <button
             type="button"
@@ -246,10 +257,7 @@ export function TopBar(props: Props) {
           // read-only preview (no authoring) and when audio is disabled.
           onSelectVoice={voiceEnabled && !readOnly ? onSelectVoice : undefined}
           voiceStyle={voiceStyle}
-          voiceStyles={voiceStyles}
-          // On the canvas the picker shows 'auto' as a no-op label (the book
-          // already has a pinned mood), so only offer concrete moods there.
-          voiceAllowAuto={view === 'gallery'}
+          voices={voices}
           onToggleLabels={view === 'canvas' ? onToggleLabels : undefined}
           // Edit mode is canvas-only and never offered in read-only preview.
           // TEMPORARILY HIDDEN: pass undefined so the menu item doesn't render.
@@ -299,10 +307,9 @@ type MoreMenuProps = {
   setLang: (l: 'zh' | 'en') => void;
   onToggleWebSearch?: () => void;
   onToggleAutoNarrate?: () => void;
-  onSelectVoice?: (style: string | null) => void;
+  onSelectVoice?: (voice: string | null) => void;
   voiceStyle?: string | null;
-  voiceStyles?: string[];
-  voiceAllowAuto?: boolean;
+  voices?: Voice[];
   onToggleLabels?: () => void;
   onToggleEditMode?: () => void;
   onToggleComposeOnClick?: () => void;
@@ -322,12 +329,16 @@ function MoreMenu({
   lang, setLang,
   onToggleWebSearch, onToggleLabels, onToggleComposeOnClick, onToggleOrientation, onRegenerate, regenerateInfo,
   onExportPreview, onToggleEditMode, onToggleAutoNarrate,
-  onSelectVoice, voiceStyle, voiceStyles, voiceAllowAuto,
+  onSelectVoice, voiceStyle, voices,
   webSearch, autoNarrate, showLabels, editMode, composeOnClick, orientation,
 }: MoreMenuProps) {
   const [open, setOpen] = useState(false);
   // Voice submenu expansion (the moods are listed inline under the row).
   const [voiceOpen, setVoiceOpen] = useState(false);
+  // 试听: which style is currently previewing, plus a single shared <audio>.
+  // Only one sample plays at a time; clicking another style switches to it.
+  const [previewStyle, setPreviewStyle] = useState<string | null>(null);
+  const previewAudioRef = useRef<HTMLAudioElement | null>(null);
   const wrapRef = useRef<HTMLDivElement | null>(null);
   const isMobile = useIsMobile();
   // Theme preference (system / light / dark). Toggled inline; keeping the
@@ -362,6 +373,28 @@ function MoreMenu({
       window.removeEventListener('keydown', onKey);
     };
   }, [open, isMobile]);
+
+  // 试听 controls. Each preview plays a server-synthesised welcome sample in
+  // the chosen mood. We reuse one Audio element; switching styles or closing
+  // the submenu stops whatever's playing.
+  const stopPreview = () => {
+    const a = previewAudioRef.current;
+    if (a) { a.pause(); previewAudioRef.current = null; }
+    setPreviewStyle(null);
+  };
+  const togglePreview = (style: string) => {
+    if (previewStyle === style) { stopPreview(); return; }
+    stopPreview();
+    const a = new Audio(voicePreviewUrl(style, lang));
+    a.addEventListener('ended', () => { setPreviewStyle((s) => (s === style ? null : s)); });
+    a.addEventListener('error', () => { setPreviewStyle((s) => (s === style ? null : s)); });
+    previewAudioRef.current = a;
+    setPreviewStyle(style);
+    a.play().catch(() => setPreviewStyle((s) => (s === style ? null : s)));
+  };
+  // Stop playback when the submenu collapses or the menu/component unmounts.
+  useEffect(() => { if (!voiceOpen) stopPreview(); }, [voiceOpen]);
+  useEffect(() => () => { previewAudioRef.current?.pause(); }, []);
 
   // Shared menu rows — rendered into the desktop dropdown or the mobile
   // bottom sheet depending on viewport.
@@ -512,28 +545,38 @@ function MoreMenu({
             <Icon name="narrate" size={14} />
             <span className={styles.moreItemLabel}>{t('topbar.voice', lang)}</span>
             <span className={styles.moreItemStateText} aria-hidden>
-              {t(voiceStyle ? (`voice.${voiceStyle}` as Parameters<typeof t>[0]) : 'voice.auto', lang)}
+              {voices?.find((v) => v.shortName === voiceStyle)?.displayName ?? t('voice.default', lang)}
             </span>
           </button>
           {voiceOpen && (
             <div className={styles.voiceSubmenu} role="group">
-              {(voiceAllowAuto ? [null, ...(voiceStyles ?? [])] : (voiceStyles ?? [])).map((s) => {
-                const selected = (voiceStyle ?? null) === (s ?? null);
-                const key = s ? (`voice.${s}` as Parameters<typeof t>[0]) : 'voice.auto';
+              {(voices ?? []).map((v) => {
+                const selected = voiceStyle === v.shortName;
+                const previewing = previewStyle === v.shortName;
                 return (
-                  <button
-                    key={s ?? 'auto'}
-                    type="button"
-                    className={`${styles.moreItem} ${styles.voiceItem} ${selected ? styles.moreItemOn : ''}`}
-                    role="menuitemradio"
-                    aria-checked={selected}
-                    onClick={() => { onSelectVoice(s); setVoiceOpen(false); setOpen(false); }}
-                  >
-                    <span className={styles.moreItemLabel}>{t(key, lang)}</span>
-                    <span className={styles.moreItemState} aria-hidden>
-                      {selected ? <Icon name="current" size={10} /> : null}
-                    </span>
-                  </button>
+                  <div key={v.shortName} className={styles.voiceRow}>
+                    <button
+                      type="button"
+                      className={`${styles.moreItem} ${styles.voiceItem} ${selected ? styles.moreItemOn : ''}`}
+                      role="menuitemradio"
+                      aria-checked={selected}
+                      onClick={() => { onSelectVoice(v.shortName); setVoiceOpen(false); setOpen(false); }}
+                    >
+                      <span className={styles.moreItemLabel}>{v.displayName}</span>
+                      <span className={styles.moreItemState} aria-hidden>
+                        {selected ? <Icon name="current" size={10} /> : null}
+                      </span>
+                    </button>
+                    <button
+                      type="button"
+                      className={styles.voicePreviewBtn}
+                      aria-label={t(previewing ? 'voice.preview.stop' : 'voice.preview', lang)}
+                      title={t(previewing ? 'voice.preview.stop' : 'voice.preview', lang)}
+                      onClick={(e) => { e.stopPropagation(); togglePreview(v.shortName); }}
+                    >
+                      <Icon name={previewing ? 'stop' : 'play'} size={12} />
+                    </button>
+                  </div>
                 );
               })}
             </div>

@@ -19,6 +19,9 @@ export const exportChrome = {
   showMoreMenu: !IS_EXPORT,
   // 导出版把「热点标签显隐」开关作为顶栏直出按钮（在线版收在 More 菜单里）。
   labelsInTopBar: IS_EXPORT,
+  // 导出版把「自动朗读」开关作为顶栏直出按钮（在线版收在 More 菜单里）。
+  // 默认开启自动朗读，用户可在此关闭。
+  narrateInTopBar: IS_EXPORT,
   // 页脚版权条仅在导出形态显示。
   showFooter: IS_EXPORT,
 };

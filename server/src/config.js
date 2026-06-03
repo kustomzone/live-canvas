@@ -40,7 +40,7 @@ export const config = {
   ocrMaxSpans: Number(process.env.OCR_MAX_SPANS || 200),
   // macOS `say` narration after each image is generated. On by default
   // (free, fast, offline, only runs if a real PNG was produced). Set
-  // ENABLE_AUDIO=0 to opt out. Synthesises an m4a of the node's
+  // ENABLE_AUDIO=0 to opt out. Synthesises an mp3 of the node's
   // title + caption keyed by hash, served via the assets route.
   enableAudio: process.env.ENABLE_AUDIO !== '0',
   audioTimeoutMs: Number(process.env.AUDIO_TIMEOUT_MS || 30_000),

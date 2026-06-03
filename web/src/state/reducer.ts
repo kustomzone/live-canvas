@@ -18,7 +18,7 @@ export type Action =
   | { type: 'toggle_web_search' }
   | { type: 'toggle_auto_narrate' }
   | { type: 'mark_narrated'; hash: string }
-  | { type: 'set_voice_style'; voiceStyle: string | null }
+  | { type: 'set_voice_style'; voiceStyle: string | null; target: 'gallery' | 'canvas' }
   | { type: 'set_orientation'; orientation: 'landscape' | 'portrait' }
   | { type: 'consume_drill_origin' }
   | { type: 'add_toast'; toast: Omit<Toast, 'id'> }
@@ -81,10 +81,11 @@ export function reducer(state: AppState, action: Action): AppState {
         webSearch: state.webSearch,
         // The new canvas was created with the current orientation pref.
         orientation: state.orientation,
-        // Carry the create-time voice pref into the new canvas so the TopBar
-        // shows what it was created with (the planner may still refine an
-        // 'auto' choice; tree adoption in set_tree reconciles that).
+        // Carry the gallery create-time voice pref into BOTH: it stays the
+        // gallery default, and seeds the new book's mood (the planner may still
+        // refine an 'auto' choice; set_tree adoption reconciles that).
         voiceStyle: state.voiceStyle,
+        canvasVoiceStyle: state.voiceStyle,
       };
 
     case 'set_share_mode':
@@ -109,10 +110,10 @@ export function reducer(state: AppState, action: Action): AppState {
         orientation: action.tree.orientation === 'portrait' ? 'portrait'
           : action.tree.orientation === 'landscape' ? 'landscape'
           : state.orientation,
-        // Adopt the canvas's pinned narration mood so the TopBar reflects the
-        // voice this book actually uses. Falls back to the current pref for
-        // legacy trees that predate the field (or haven't picked one yet).
-        voiceStyle: action.tree.voice_style ?? state.voiceStyle,
+        // Adopt the opened canvas's pinned narration mood as the OPEN book's
+        // voice (independent of the gallery create-time default). Falls back to
+        // the gallery pref for legacy trees that predate the field.
+        canvasVoiceStyle: action.tree.voice_style ?? state.voiceStyle,
       };
 
     case 'navigate': {
@@ -212,15 +213,20 @@ export function reducer(state: AppState, action: Action): AppState {
     }
 
     case 'set_voice_style': {
-      // Persist as the create-time default. When a canvas is open, the caller
-      // (App) also POSTs /voice to re-synthesise; here we only track the
-      // selection so the UI radio reflects it. Mirror it onto the open tree so
-      // the selector stays correct after a reload reads tree.voice_style.
-      persistVoiceStylePref(action.voiceStyle);
+      // Two independent voice prefs: the gallery create-time default (persisted
+      // to localStorage) and the open book's mood (session-only, mirrored onto
+      // the tree). They never cross-contaminate so a user tweaking one book's
+      // voice doesn't change what the next new canvas is created with.
+      if (action.target === 'gallery') {
+        persistVoiceStylePref(action.voiceStyle);
+        return { ...state, voiceStyle: action.voiceStyle };
+      }
+      // Canvas: update only the open book. Mirror onto the tree so the radio
+      // stays correct after a reload reads tree.voice_style.
       const tree = state.tree
         ? { ...state.tree, voice_style: action.voiceStyle }
         : state.tree;
-      return { ...state, voiceStyle: action.voiceStyle, tree };
+      return { ...state, canvasVoiceStyle: action.voiceStyle, tree };
     }
 
     case 'set_orientation': {

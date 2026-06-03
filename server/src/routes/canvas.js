@@ -1,4 +1,5 @@
 import express from 'express';
+import fs from 'node:fs';
 import { createCanvas, getCanvas, listCanvases, deleteCanvas } from '../store/canvasStore.js';
 import { readTree } from '../store/treeStore.js';
 import { isSafeId } from '../store/paths.js';
@@ -6,7 +7,7 @@ import { enqueueRootGeneration, resynthesizeCanvasAudio } from '../generation/pi
 import { normalizeLang } from '../generation/language.js';
 import { uploadMemory, persistUpload } from './upload.js';
 import { buildCanvasExport } from '../export/buildExport.js';
-import { VOICE_STYLES, DEFAULT_VOICE_STYLE } from '../generation/audio.js';
+import { DEFAULT_VOICE, listVoices, resolveVoice, generateVoicePreview } from '../generation/audio.js';
 import { config } from '../config.js';
 
 export const canvasRouter = express.Router();
@@ -17,24 +18,53 @@ function parseOrientation(v) {
   return v === 'portrait' ? 'portrait' : 'landscape';
 }
 
-// Whitelist a requested narration voice style against the known moods.
-// Returns the style string or null when absent / invalid (→ let the planner
-// pick at generation time).
-function parseVoiceStyle(v) {
-  return typeof v === 'string' && VOICE_STYLES.includes(v) ? v : null;
+// Validate a requested Edge voice (ShortName) against the language's
+// available catalogue. Returns the voice when valid, else null (→ caller
+// falls back to the language default).
+async function parseVoice(v, lang) {
+  if (typeof v !== 'string' || !v) return null;
+  const voices = await listVoices(lang);
+  return voices.some((x) => x.shortName === v) ? v : null;
 }
 
-// Narration voice styles the server offers. The candidate list is
-// server-owned (the client never invents voice names); the user picks an
-// abstract mood and the server maps it to a concrete `say` voice + rate per
-// language. `enabled` reflects the ENABLE_AUDIO env switch so the client can
-// hide the control when narration is off server-side.
-canvasRouter.get('/voices', (_req, res) => {
-  res.json({
-    enabled: config.enableAudio,
-    default: DEFAULT_VOICE_STYLE,
-    styles: VOICE_STYLES,
-  });
+// Narration voices the server offers, sourced directly from Edge's online
+// catalogue (cached) and filtered to the requested UI language. The client
+// picks a concrete voice (ShortName); the server validates it against this
+// list. `enabled` reflects the ENABLE_AUDIO env switch so the client can hide
+// the control when narration is off server-side.
+// Query: ?lang=<zh|en>.
+canvasRouter.get('/voices', async (req, res) => {
+  const lang = normalizeLang(req.query?.lang);
+  try {
+    const voices = await listVoices(lang);
+    res.json({
+      enabled: config.enableAudio,
+      default: DEFAULT_VOICE[lang] || DEFAULT_VOICE.zh,
+      voices,
+    });
+  } catch (e) {
+    res.status(500).json({ error: 'voices_failed', message: e?.message });
+  }
+});
+
+// Synthesise (or cache-hit) a short welcome sample in the requested voice and
+// stream it back, so the UI can let users 试听 a voice before applying it.
+// Canvas-independent; cached server-side per (lang, voice).
+// Query: ?voice=<ShortName>&lang=<zh|en>. Must be registered before '/:id/*' —
+// it isn't shadowed (two literal segments vs '/:id/voice'), but keep it near
+// the sibling /voices route for clarity.
+canvasRouter.get('/voices/preview', async (req, res) => {
+  if (!config.enableAudio) return res.status(409).json({ error: 'audio_disabled' });
+  const lang = normalizeLang(req.query?.lang);
+  const voice = await resolveVoice(req.query?.voice, lang);
+  try {
+    const r = await generateVoicePreview({ voice, lang });
+    if (!r.ok) return res.status(500).json({ error: 'preview_failed', reason: r.reason });
+    res.type(r.ext === 'mp3' ? 'audio/mpeg' : 'audio/mp4');
+    fs.createReadStream(r.path).pipe(res);
+  } catch (e) {
+    res.status(500).json({ error: 'preview_failed', message: e?.message });
+  }
 });
 
 canvasRouter.get('/', async (req, res) => {
@@ -65,12 +95,12 @@ canvasRouter.post('/', async (req, res) => {
   const { topic, branches, webSearch } = req.body || {};
   const lang = normalizeLang(req.body?.lang);
   const orientation = parseOrientation(req.body?.orientation);
-  const voiceStyle = parseVoiceStyle(req.body?.voiceStyle);
+  const voice = await parseVoice(req.body?.voice, lang);
   if (!topic || typeof topic !== 'string' || !topic.trim()) {
     return res.status(400).json({ error: 'topic_required' });
   }
   try {
-    const runtime = await createCanvas({ topic: topic.trim(), branches: Number(branches) || 5, orientation, voiceStyle });
+    const runtime = await createCanvas({ topic: topic.trim(), branches: Number(branches) || 5, orientation, voice });
     // webSearch is an opt-out boolean; default true.
     const webSearchEnabled = webSearch !== false;
     const jobId = enqueueRootGeneration(runtime, { webSearchEnabled, lang });
@@ -103,10 +133,10 @@ canvasRouter.post('/upload', uploadMemory.single('image'), async (req, res) => {
   }
   const webSearchEnabled = req.body?.webSearch !== '0' && req.body?.webSearch !== false;
   const orientation = parseOrientation(req.body?.orientation);
-  const voiceStyle = parseVoiceStyle(req.body?.voiceStyle);
+  const voice = await parseVoice(req.body?.voice, lang);
   try {
     const finalTopic = topic || '__pending__';
-    const runtime = await createCanvas({ topic: finalTopic, orientation, voiceStyle });
+    const runtime = await createCanvas({ topic: finalTopic, orientation, voice });
     let seedImagePath = null;
     if (file) {
       seedImagePath = await persistUpload(runtime.id, 'seed', file);
@@ -134,23 +164,27 @@ canvasRouter.get('/:id/tree', async (req, res) => {
 });
 
 // Change the flipbook's narration voice and re-synthesise every node's audio
-// with the new mood. The candidate styles come from GET /voices; the client
-// sends an abstract mood here, never a raw voice name. Returns immediately
-// with the accepted style; re-narration runs async and streams AUDIO_READY +
-// NODE_READY per node over SSE so open viewers update live.
+// with the new voice. The candidate voices come from GET /voices; the client
+// sends a concrete Edge voice (ShortName). Returns immediately with the
+// accepted voice; re-narration runs async and streams AUDIO_READY + NODE_READY
+// per node over SSE so open viewers update live.
 canvasRouter.post('/:id/voice', async (req, res) => {
   const { id } = req.params;
   if (!isSafeId(id)) return res.status(400).json({ error: 'bad_id' });
-  const voiceStyle = parseVoiceStyle(req.body?.voiceStyle);
-  if (!voiceStyle) return res.status(400).json({ error: 'bad_voice_style', styles: VOICE_STYLES });
+  // Infer language from the voice's locale prefix so we validate against the
+  // right catalogue (zh-CN-* → zh, otherwise en).
+  const raw = req.body?.voice;
+  const lang = typeof raw === 'string' && raw.startsWith('zh-') ? 'zh' : 'en';
+  const voice = await parseVoice(raw, lang);
+  if (!voice) return res.status(400).json({ error: 'bad_voice' });
   if (!config.enableAudio) return res.status(409).json({ error: 'audio_disabled' });
   const runtime = await getCanvas(id);
   if (!runtime) return res.status(404).json({ error: 'not_found' });
   // Fire-and-forget the (potentially slow) re-synthesis so the request
   // returns promptly; progress is delivered over the canvas's SSE stream.
-  resynthesizeCanvasAudio(runtime, voiceStyle)
+  resynthesizeCanvasAudio(runtime, voice)
     .catch((e) => { /* logged inside; swallow to avoid unhandled rejection */ void e; });
-  res.status(202).json({ ok: true, voiceStyle });
+  res.status(202).json({ ok: true, voice });
 });
 
 // Bulk-delete canvases. Body: { ids: string[] }. Each id is validated;

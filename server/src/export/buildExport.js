@@ -36,10 +36,10 @@ async function collectViteAssets() {
 }
 
 // Strip the node JSON down to only the fields the static viewer needs, and
-// rewrite the image path to a relative in-zip path (images/<hash>.png). We
-// keep image_prompt out (only used for the generating placeholder) and any
-// server-side bookkeeping fields.
-function projectNode(node, images) {
+// rewrite the image/audio paths to relative in-zip paths (images/<hash>.png,
+// audio/<hash>.<ext>). We keep image_prompt out (only used for the generating
+// placeholder) and any server-side bookkeeping fields.
+function projectNode(node, images, audioFile) {
   return {
     hash: node.hash,
     depth: node.depth ?? 0,
@@ -63,6 +63,9 @@ function projectNode(node, images) {
     image_medium: images.medium ? `images/${images.medium}` : null,
     image_w: node.image_w,
     image_h: node.image_h,
+    // Relative in-zip narration audio so the exported viewer can auto-narrate
+    // offline (file://). Null when the node never produced audio.
+    audio_url: audioFile ? `audio/${audioFile}` : null,
     path: Array.isArray(node.path)
       ? node.path.map((p) => ({ hash: p.hash, title: p.title || '' }))
       : undefined,
@@ -101,6 +104,7 @@ export async function buildCanvasSite(canvasId, opts = {}) {
   const entries = [];
   const exportNodes = {};
   const imageDir = paths.imageDir(canvasId);
+  const audioDir = paths.audioDir(canvasId);
 
   for (const hash of nodeHashes) {
     let node;
@@ -136,7 +140,23 @@ export async function buildCanvasSite(canvasId, opts = {}) {
         }
       }
     }
-    exportNodes[hash] = projectNode(node, images);
+    // Bundle the node's narration audio (Edge → .mp3, legacy `say` → .m4a) so
+    // the exported viewer can auto-narrate offline. The node's `audio` field
+    // is a relative "audio/<hash>.<ext>" path written by the pipeline.
+    let audioFile = null;
+    if (node.audio) {
+      const aBase = path.basename(node.audio); // e.g. "<hash>.mp3"
+      const aAbs = path.join(audioDir, aBase);
+      if (fsSync.existsSync(aAbs)) {
+        const aBuf = await fs.readFile(aAbs);
+        if (aBuf.length >= 256) {
+          audioFile = aBase;
+          entries.push({ name: `audio/${aBase}`, data: aBuf, store: true });
+        }
+      }
+    }
+
+    exportNodes[hash] = projectNode(node, images, audioFile);
   }
 
   // Drop tree entries that didn't make it into exportNodes so the catalog

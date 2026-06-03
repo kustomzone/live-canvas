@@ -77,8 +77,9 @@ export type Node = {
   branches: number;
   style: string;
   orientation?: 'landscape' | 'portrait';
-  // Flipbook-level narration mood (one of the server's VOICE_STYLES). null
-  // until the root planner picks one (or the user pins one at create time).
+  // Flipbook-level narration voice (an Edge voice ShortName, e.g.
+  // zh-CN-XiaoxiaoNeural). null = use the language default. Set when the user
+  // pins one at create time or changes the voice on an open book.
   voice_style?: string | null;
   nodes: Record<string, { title: string; depth: number; parent: string | null; children: string[]; status?: 'generating' }>;
 };
@@ -201,11 +202,16 @@ export type AppState = {
   // Hashes already auto-narrated this session, so returning to a node doesn't
   // replay automatically (manual play still works). Session-only.
   narratedHashes: Record<string, true>;
-  // User's chosen narration voice mood (one of the server's VOICE_STYLES) or
-  // null = "let the planner auto-pick". At create time it pins tree.voice_style;
-  // on an open canvas, changing it re-synthesises all nodes. Persisted to
-  // localStorage as a create-time default.
+  // User's chosen narration voice (a concrete Edge voice ShortName, e.g.
+  // zh-CN-XiaoxiaoNeural) or null = "use the language default". This is the
+  // GALLERY create-time default only: it pins the next canvas's
+  // tree.voice_style and is persisted to localStorage. It is NOT touched when
+  // changing an open book's voice.
   voiceStyle: string | null;
+  // The OPEN canvas's narration voice (adopted from tree.voice_style). Changing
+  // it re-synthesises that book's audio but does NOT affect the gallery
+  // create-time default above. Session-only — reloads re-read tree.voice_style.
+  canvasVoiceStyle: string | null;
   // Image orientation for the NEXT canvas to be created. Per-canvas: fixed at
   // creation time. When viewing an existing canvas this reflects that
   // canvas's orientation (adopted from its manifest); on the gallery it's the
@@ -324,6 +330,7 @@ export const initialState: AppState = {
   orientation: readOrientationPref(),
   autoNarrate: readAutoNarratePref(),
   voiceStyle: readVoiceStylePref(),
+  canvasVoiceStyle: null,
   narratedHashes: {},
   lastDrillFrom: null,
   rootProgress: null,

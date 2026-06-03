@@ -474,6 +474,36 @@
   padding-left: 30px;
 }
 
+/* Each mood row pairs the radio button (flex:1) with a trailing 试听 button. */
+.voiceRow {
+  display: flex;
+  align-items: center;
+}
+
+.voiceRow .voiceItem {
+  flex: 1;
+}
+
+.voicePreviewBtn {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 26px;
+  height: 26px;
+  margin-right: 6px;
+  flex-shrink: 0;
+  border: none;
+  background: transparent;
+  border-radius: 6px;
+  color: var(--text-muted, #888);
+  cursor: pointer;
+}
+
+.voicePreviewBtn:hover {
+  background: var(--hover-bg, rgba(127, 127, 127, 0.15));
+  color: var(--accent);
+}
+
 .moreItemLabel {
   flex: 1;
   white-space: nowrap;

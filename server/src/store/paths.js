@@ -11,13 +11,18 @@ export const paths = {
   nodePath: (id, hash) => path.join(paths.nodeDir(id), `${hash}.json`),
   imageDir: (id) => path.join(paths.canvasDir(id), 'images'),
   imagePath: (id, hash, ext = 'png') => path.join(paths.imageDir(id), `${hash}.${ext}`),
-  // Synthesised narration audio (macOS `say`). Filename: <hash>.m4a.
+  // Synthesised narration audio (Edge neural voices). Filename: <hash>.mp3.
   audioDir: (id) => path.join(paths.canvasDir(id), 'audio'),
-  audioPath: (id, hash, ext = 'm4a') => path.join(paths.audioDir(id), `${hash}.${ext}`),
+  audioPath: (id, hash, ext = 'mp3') => path.join(paths.audioDir(id), `${hash}.${ext}`),
   // User-uploaded source images attached to a node (canvas creation seed
   // or per-click drilldown attachment). Filename: <jobId>.<ext>.
   uploadDir: (id) => path.join(paths.canvasDir(id), 'uploads'),
   uploadPath: (id, basename) => path.join(paths.uploadDir(id), basename),
+  // Cached voice preview (试听) samples. Canvas-independent — keyed by
+  // (lang, voice) so a sample is synthesised once and reused across books.
+  // Filename: <lang>-<voice>.<ext> (voice = Edge ShortName, ext = mp3).
+  previewDir: () => path.join(config.dataDir, 'voice-previews'),
+  previewPath: (lang, voice, ext) => path.join(paths.previewDir(), `${lang}-${voice}.${ext}`),
 };
 
 // Validators (used by routes to prevent path traversal)

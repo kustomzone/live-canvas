@@ -115,7 +115,7 @@ export function Canvas({ canvasId, node, tree, imageLoading, pendingClicks, read
     setPlaying(false);
   };
 
-  const playAudio = () => {
+  const playAudio = (onPlayed?: () => void) => {
     if (!audioUrl) return;
     let a = audioRef.current;
     if (!a) {
@@ -124,10 +124,30 @@ export function Canvas({ canvasId, node, tree, imageLoading, pendingClicks, read
       a.addEventListener('pause', () => setPlaying(false));
       audioRef.current = a;
     }
-    a.play().then(() => setPlaying(true)).catch(() => setPlaying(false));
+    a.play()
+      .then(() => { setPlaying(true); onPlayed?.(); })
+      .catch(() => setPlaying(false));
   };
 
   const toggleAudio = () => { if (playing) stopAudio(); else playAudio(); };
+
+  // When the voice changes, the server re-synthesises this node and pushes a
+  // new audio_url (audio_ready). The cached <audio> still points at the OLD
+  // file, so swap it out: stop the stale element and, if it was playing,
+  // restart from the new URL. Skips the initial mount (no prior URL).
+  const prevAudioUrlRef = useRef<string | null>(audioUrl);
+  useEffect(() => {
+    const prev = prevAudioUrlRef.current;
+    if (prev === audioUrl) return;
+    prevAudioUrlRef.current = audioUrl;
+    if (prev === null) return; // first time audio appears — let auto-narrate handle it
+    const wasPlaying = playing;
+    const a = audioRef.current;
+    if (a) { a.pause(); audioRef.current = null; }
+    setPlaying(false);
+    if (wasPlaying && audioUrl) playAudio();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [audioUrl]);
 
   // Stop + tear down on unmount (node switch).
   useEffect(() => () => {
@@ -136,12 +156,18 @@ export function Canvas({ canvasId, node, tree, imageLoading, pendingClicks, read
   }, []);
 
   // Auto-narrate on first visit. audioUrl may arrive after mount (async
-  // synthesis → audio_ready), so this effect re-runs when it appears.
+  // synthesis → audio_ready), so this effect re-runs when it appears. Mark the
+  // node as narrated ONLY once playback actually starts — if the browser
+  // blocks autoplay (no prior user gesture), play() rejects and we leave the
+  // node un-marked so the next gesture-driven re-render can retry.
   const hashForNarrate = node?.hash;
   useEffect(() => {
-    if (!autoNarrate || !audioUrl || !hashForNarrate || narrated || readOnly) return;
-    onMarkNarrated?.(hashForNarrate);
-    playAudio();
+    // Auto-narrate is blocked in the live read-only preview (a shared link is
+    // a passive view), but the EXPORTED static site is a deliberate offline
+    // replica where narration should play — so allow it there.
+    if (readOnly && !IS_EXPORT) return;
+    if (!autoNarrate || !audioUrl || !hashForNarrate || narrated) return;
+    playAudio(() => onMarkNarrated?.(hashForNarrate));
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [autoNarrate, audioUrl, hashForNarrate, narrated, readOnly]);
 
@@ -501,7 +527,7 @@ export function Canvas({ canvasId, node, tree, imageLoading, pendingClicks, read
               <Icon name={playing ? 'stop' : 'play'} size={13} />
             </button>
           )}
-          {isGenerating && <span className={styles.genChip}><span className={styles.genDot} />{t('preview.generating', lang)}</span>}
+          {isGenerating && <span className={styles.genChip}><span className={styles.genDot} /><span className={styles.genChipText}>{t('preview.generating', lang)}</span></span>}
           {node.title}
           {isGenerating && <span className={styles.genCaret} />}
           {node.sources && node.sources.length > 0 && <SourcesBadge sources={node.sources} />}

@@ -39,14 +39,9 @@ export function extractPartialField(buf, field) {
   return out; // unclosed — return what we have so far
 }
 
-// Allowed narration moods the planner may pick (kept in sync with
-// generation/audio.js VOICE_STYLES + the planner prompt schema). The model's
-// pick is advisory: an absent / unknown value falls back to 'neutral'.
-const VOICE_STYLES = ['neutral', 'cheerful', 'serious', 'gentle', 'dramatic', 'mysterious', 'energetic'];
-
 export function validatePlannerOutput(raw) {
   if (!raw || typeof raw !== 'object') throw new PlannerError('planner output not an object');
-  const { title, caption, image_prompt, voice_style } = raw;
+  const { title, caption, image_prompt } = raw;
   if (typeof title !== 'string' || !title.trim()) throw new PlannerError('title missing');
   if (typeof caption !== 'string') throw new PlannerError('caption missing');
   if (typeof image_prompt !== 'string' || !image_prompt.trim()) throw new PlannerError('image_prompt missing');
@@ -54,10 +49,6 @@ export function validatePlannerOutput(raw) {
     title: String(title).slice(0, 80),
     caption: String(caption).slice(0, 220),
     image_prompt: String(image_prompt),
-    // Optional narration mood. Validated against the whitelist; anything
-    // missing or unrecognised normalises to 'neutral' so downstream TTS
-    // always has a usable style without breaking the core contract.
-    voice_style: VOICE_STYLES.includes(voice_style) ? voice_style : 'neutral',
   };
 }
 

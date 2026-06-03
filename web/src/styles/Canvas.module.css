@@ -288,6 +288,18 @@
   background: #e0344f;
   animation: pulse 1.6s ease-out infinite;
 }
+/* On small screens, drop the "generating" text and keep just the pulsing dot
+   so the title bar doesn't wrap / get crowded. */
+@media (max-width: 720px) {
+  .genChip {
+    gap: 0;
+    padding: 4px;
+    margin-right: 6px;
+  }
+  .genChipText {
+    display: none;
+  }
+}
 /* Blinking typewriter caret after the streaming title. */
 .genCaret {
   display: inline-block;
