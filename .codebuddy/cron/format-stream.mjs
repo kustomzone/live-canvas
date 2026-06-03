@@ -4,8 +4,7 @@
 // 逐行读 stdin、JSON.parse、按事件类型输出带时间戳的纯文本到 stdout。
 import { createInterface } from 'node:readline';
 
-const ts = () => new Date().toISOString().replace('T', ' ').slice(0, 19);
-const line = (s) => process.stdout.write(`[${ts()}] ${s}\n`);
+const line = (s) => process.stdout.write(`${s}\n`);
 
 // 截断长文本,日志保持可读
 const clip = (s, n = 800) => {
