@@ -20,6 +20,11 @@
 //   --keep-server       don't kill the server on exit (debugging).
 //   PORT                fixed port (default: an auto-picked free port).
 //   ORIENTATION         portrait | landscape (default portrait).
+//   STYLE               douyin to use the bundled vertical "Douyin viral
+//                       poster" prompt pack (prompts-douyin/); unset => the
+//                       project's original prompts. An explicit PROMPTS_DIR
+//                       always overrides STYLE.
+//   PROMPTS_DIR         override the prompt template dir directly (wins over STYLE).
 //   RECENT_DAYS         dedup window in days (default 90).
 //   DRILL_PER           drilldown children per canvas (default 10).
 //   ENABLE_OCR          1 to re-enable Apple Vision OCR (default 0 — off for
@@ -66,6 +71,22 @@ const DRY_RUN = process.env.DRY_RUN === '1';
 // both add per-image overhead. Opt back in with ENABLE_OCR=1 / ENABLE_AUDIO=1.
 const ENABLE_OCR = process.env.ENABLE_OCR === '1' ? '1' : '0';
 const ENABLE_AUDIO = process.env.ENABLE_AUDIO === '1' ? '1' : '0';
+
+// Visual style switch (opt-in). STYLE=douyin swaps the prompt templates for the
+// vertical "Douyin viral poster" pack bundled with this skill, by defaulting
+// PROMPTS_DIR to it. An explicit PROMPTS_DIR always wins. Unset/anything else
+// => the project's original prompts (server falls back to app/prompts/).
+const STYLE = (process.env.STYLE || '').toLowerCase();
+// scripts/ -> hot-canvas-batch/
+const SKILL_DIR = path.resolve(__dirname, '..');
+const DOUYIN_PROMPTS_DIR = path.join(SKILL_DIR, 'prompts-douyin');
+let PROMPTS_DIR = process.env.PROMPTS_DIR || '';
+if (!PROMPTS_DIR && STYLE === 'douyin') {
+  if (!fssync.existsSync(DOUYIN_PROMPTS_DIR)) {
+    throw new Error(`STYLE=douyin but prompt pack not found: ${DOUYIN_PROMPTS_DIR}`);
+  }
+  PROMPTS_DIR = DOUYIN_PROMPTS_DIR;
+}
 
 const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
 
@@ -121,6 +142,8 @@ async function startServer(port) {
       // Skip the post-image OCR / narration passes by default (see flags above).
       ENABLE_OCR,
       ENABLE_AUDIO,
+      // Style pack (empty unless STYLE=douyin or an explicit PROMPTS_DIR was set).
+      ...(PROMPTS_DIR ? { PROMPTS_DIR } : {}),
       PORT: String(port),
       HOST: '127.0.0.1',
     },
@@ -255,6 +278,7 @@ async function main() {
   BASE_URL = `http://127.0.0.1:${port}`;
   console.log(`appDir=${APP_DIR}`);
   console.log(`port=${port} orientation=${ORIENTATION} recentDays=${RECENT_DAYS} drillPer=${DRILL_PER} dryRun=${DRY_RUN}`);
+  console.log(`style=${STYLE || '(default)'} promptsDir=${PROMPTS_DIR || '(project default)'}`);
 
   await startServer(port);
   await waitServerReady();

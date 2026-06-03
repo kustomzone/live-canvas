@@ -64,6 +64,8 @@ node ./scripts/build_canvases.mjs --themes /path/to/themes.json
 | `--keep-server` | 关 | 调试用，结束后保留 server 不 kill |
 | `PORT` | 自动挑空闲端口 | 指定则用固定端口 |
 | `ORIENTATION` | `portrait` | 画册方向，竖版/横版 |
+| `STYLE` | 空（项目原始风格） | 设 `douyin` 切换为本 skill 自带的竖版抖音爆款风格（`prompts-douyin/`）；显式 `PROMPTS_DIR` 优先级高于 `STYLE` |
+| `PROMPTS_DIR` | — | 直接指定 prompt 模板目录，覆盖 `STYLE` 的默认选择 |
 | `RECENT_DAYS` | `90` | 去重时间窗（近 N 天同主题跳过） |
 | `DRILL_PER` | `10` | 每册下钻子节点数 |
 | `ENABLE_OCR` | `0`（关） | 建册默认关掉 Apple Vision OCR 文字层；设 `1` 重新开启 |
@@ -74,6 +76,21 @@ node ./scripts/build_canvases.mjs --themes /path/to/themes.json
 > 且二者各自给每张图增加一次额外处理开销。需要时用 `ENABLE_OCR=1` / `ENABLE_AUDIO=1` 开回。
 
 建议先 `DRY_RUN=1` 跑一遍确认选题不会被去重命中，再正式建。
+
+## 视觉风格（STYLE 开关）
+
+默认用项目原始风格（米色 isometric 信息图）。要做**抖音图文爆款风格**时加 `STYLE=douyin`：
+
+```bash
+STYLE=douyin node ./scripts/build_canvases.mjs --themes /path/to/themes.json
+```
+
+`STYLE=douyin` 会把 `PROMPTS_DIR` 默认指向本 skill 自带的 `prompts-douyin/`，整套 prompt 模板换成：
+- **竖版 9:16 电影感海报**：深海/暗色渐变背景、单一震撼 hero 主体、cyan/magenta 辉光、体积光。
+- **大字钩子标题**（4-10 字）+ 6-12 个大号数字 callout，移动端竖屏优先构图。
+- **文案 register 偏爆款**：标题钩子/悬念/数字，正文口语化、含震撼数字、末尾互动钩子。
+
+覆盖关系：显式 `PROMPTS_DIR=xxx` > `STYLE=douyin` > 项目默认。想自定义别的风格，复制 `prompts-douyin/` 改写后用 `PROMPTS_DIR` 指过去即可（风格后缀在 `image-prompt.md`，须是 `>` 引用 + 反引号包裹、逗号开头的那一行）。
 
 ## 去重机制
 脚本扫 `<app>/topics-history/*/run.json`，取 `timestamp` 在近 `RECENT_DAYS` 天内的
