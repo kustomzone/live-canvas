@@ -24,9 +24,22 @@ description: 当需要把网络热点/流量高的内容批量做成 flipbook-sk
 
 ## 阶段一 —— 选题，写 themes.json
 
-1. 用 WebSearch 搜当日热点（如票房榜、电竞赛事、AI 动态、热门影视/综艺等），
-   抓取**具体事实**（数字、事件、名称），这些会成为下钻 label。
-2. 按 `scripts/themes.example.json` 的结构写一份 themes 文件。字段：
+1. **先看已发布的主题（去重前置）**：选题前先列出近 N 天已经做过的画册主题，
+   避免重复选题、白费搜索功夫。运行：
+
+   ```bash
+   node ./scripts/list_recent_topics.mjs           # 人读列表，近 90 天，最新在前
+   # node ./scripts/list_recent_topics.mjs --json  # 机读 JSON
+   # RECENT_DAYS=30 node ./scripts/list_recent_topics.mjs  # 收窄时间窗
+   ```
+
+   这个脚本**直接读** `topics-history/*/run.json`、不起服务、不联网。把输出里的
+   topic + aliases 当作"黑名单"：**搜热点 / 挑选题时就主动避开这些已发布主题**
+   （含近义说法）。这样在选题阶段就完成去重，而不是等到阶段二建册时才被 SKIP。
+2. 用 WebSearch 搜当日热点（如票房榜、电竞赛事、AI 动态、热门影视/综艺等），
+   抓取**具体事实**（数字、事件、名称），这些会成为下钻 label。挑选题时对照第 1 步
+   的已发布列表，命中（或近义）的直接换别的热点。
+3. 按 `scripts/themes.example.json` 的结构写一份 themes 文件。字段：
 
 ```json
 [
@@ -92,10 +105,17 @@ STYLE=douyin node ./scripts/build_canvases.mjs --themes /path/to/themes.json
 
 覆盖关系：显式 `PROMPTS_DIR=xxx` > `STYLE=douyin` > 项目默认。想自定义别的风格，复制 `prompts-douyin/` 改写后用 `PROMPTS_DIR` 指过去即可（风格后缀在 `image-prompt.md`，须是 `>` 引用 + 反引号包裹、逗号开头的那一行）。
 
-## 去重机制
-脚本扫 `<app>/topics-history/*/run.json`，取 `timestamp` 在近 `RECENT_DAYS` 天内的
-记录，把每个 canvas 的 `topic`+`aliases` 归一化（去空格/标点/大小写）后与本次选题做
-包含匹配，命中则 SKIP。**所以每次换新热点即可，老主题不会被重复生成。**
+## 去重机制（两道防线）
+两个阶段都基于同一份历史数据 `<app>/topics-history/*/run.json`，归一化口径一致
+（`topic`+`aliases` 去空格/标点/大小写后做包含匹配）：
+
+1. **选题阶段（前置，推荐）**：跑 `list_recent_topics.mjs` 列出近 `RECENT_DAYS` 天
+   已发布主题，**搜热点时就主动避开**——从源头省掉重复选题与无谓搜索。
+2. **建册阶段（兜底）**：`build_canvases.mjs` 起服务后会再扫一遍历史，对本次 themes
+   逐条做包含匹配，命中则 SKIP（控制台打印 `SKIP "..." (recent duplicate of "...")`）。
+
+两层用同一逻辑，前置那层让你尽早换题，兜底那层保证万一漏了也不会重复生成。
+**所以每次换新热点即可，老主题不会被重复生成。**
 
 ## 产物
 - 画册数据：`<app>/server/data/canvases/<canvasId>/`（manifest / tree.json / nodes / images）。
