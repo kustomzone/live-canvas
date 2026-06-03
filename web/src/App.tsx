@@ -10,7 +10,7 @@ import { Gallery } from './components/Gallery';
 import { ConfirmModal } from './components/ConfirmModal';
 import { ClickComposer } from './components/ClickComposer';
 import { useCanvasSSE } from './hooks/useCanvasSSE';
-import { createCanvas, clickAt, getNode, getTree, createShareLink, resolveShareLink, deleteNode, regenerateNode, cancelHotspot, exportCanvas, updateHotspot } from './lib/api';
+import { createCanvas, clickAt, getNode, getTree, createShareLink, resolveShareLink, deleteNode, regenerateNode, cancelHotspot, exportCanvas, updateHotspot, getVoices, setCanvasVoice } from './lib/api';
 import { useLang, t, displayTopic } from './lib/i18n';
 import { revokeSelection, type ImageSelection } from './lib/imageUpload';
 import { copyToClipboard } from './lib/clipboard';
@@ -60,6 +60,12 @@ export default function App() {
   // OFF — long-press fires generate immediately; user can enable the
   // compose panel via the More menu).
   const [composeOnClick, setComposeOnClick] = useState(false);
+  // Server-owned narration voice catalog. Fetched once on mount; the client
+  // never invents voice names — it picks an abstract mood from `voiceStyles`.
+  // `voiceEnabled` mirrors the server's ENABLE_AUDIO switch so the picker is
+  // hidden when narration is off server-side.
+  const [voiceStyles, setVoiceStyles] = useState<string[]>([]);
+  const [voiceEnabled, setVoiceEnabled] = useState(false);
   // Pending click-composer state. When non-null the floating panel is open
   // anchored at this image-relative xy, capturing label + image attachment.
   const [clickComposer, setClickComposer] = useState<{ xy: [number, number] } | null>(null);
@@ -209,6 +215,21 @@ export default function App() {
     return () => document.removeEventListener('fullscreenchange', handler);
   }, []);
 
+  // Fetch the server's narration voice catalog once on mount (export build
+  // has no server, so skip it there).
+  useEffect(() => {
+    if (IS_EXPORT) return;
+    let cancelled = false;
+    getVoices()
+      .then((v) => {
+        if (cancelled) return;
+        setVoiceStyles(v.styles ?? []);
+        setVoiceEnabled(!!v.enabled);
+      })
+      .catch(() => { /* narration unavailable — picker stays hidden */ });
+    return () => { cancelled = true; };
+  }, []);
+
   const hydrateCanvas = async (id: string, targetHash: string | null = null) => {
     try {
       const tree = await getTree(id);
@@ -263,6 +284,7 @@ export default function App() {
         image: topicAttachment?.file ?? null,
         lang,
         orientation: state.orientation,
+        voiceStyle: state.voiceStyle,
       });
       // Sync the in-memory topic to whatever the server stored. When only
       // an image was uploaded, the server uses '__pending__' as a sentinel
@@ -282,7 +304,7 @@ export default function App() {
     } finally {
       setSubmitting(false);
     }
-  }, [draftTopic, state.readOnly, state.webSearch, state.orientation, topicAttachment, submitting, lang]);
+  }, [draftTopic, state.readOnly, state.webSearch, state.orientation, state.voiceStyle, topicAttachment, submitting, lang]);
 
   const onImageClick = useCallback(async (xy: [number, number]) => {
     if (IS_EXPORT) return;
@@ -632,6 +654,28 @@ export default function App() {
     dispatch({ type: 'set_orientation', orientation: state.orientation === 'portrait' ? 'landscape' : 'portrait' });
   }, [state.orientation]);
 
+  // Pick a narration voice mood. On the gallery this just updates the
+  // create-time preference (persisted) for the next canvas. On the canvas it
+  // ALSO re-synthesises every node's audio with the new mood server-side
+  // (the user confirmed they want existing nodes re-narrated). The selection
+  // is reflected locally immediately; AUDIO_READY/NODE_READY events stream the
+  // refreshed audio per node.
+  const onSelectVoice = useCallback((style: string | null) => {
+    dispatch({ type: 'set_voice_style', voiceStyle: style });
+    // Re-synthesis only applies to an existing canvas with a concrete mood.
+    if (state.view !== 'canvas' || !state.canvasId || state.readOnly || !style) return;
+    dispatch({ type: 'add_toast', toast: { level: 'info', message: t('topbar.voice.resynth', lang), tag: 'voice', sticky: true } });
+    setCanvasVoice(state.canvasId, style)
+      .then(() => {
+        dispatch({ type: 'remove_toast_by_tag', tag: 'voice' });
+        dispatch({ type: 'add_toast', toast: { level: 'info', message: t('topbar.voice.resynth.done', lang) } });
+      })
+      .catch((e) => {
+        dispatch({ type: 'remove_toast_by_tag', tag: 'voice' });
+        dispatch({ type: 'add_toast', toast: { level: 'error', message: `${t('topbar.voice', lang)}: ${(e as Error).message}` } });
+      });
+  }, [state.view, state.canvasId, state.readOnly, lang]);
+
   const currentNode = state.currentHash ? state.nodes[state.currentHash] : null;
 
   // 导出形态：标签页标题跟随当前节点标题（在线版由文档默认标题处理）。
@@ -723,6 +767,7 @@ export default function App() {
           onToggleEditMode={onToggleEditMode}
           onToggleWebSearch={onToggleWebSearch}
           onToggleAutoNarrate={onToggleAutoNarrate}
+          onSelectVoice={onSelectVoice}
           onToggleOrientation={onToggleOrientation}
           orientation={state.orientation}
           onToggleComposeOnClick={() => setComposeOnClick((v) => !v)}
@@ -740,6 +785,9 @@ export default function App() {
           editMode={state.editMode}
           webSearch={state.webSearch}
           autoNarrate={state.autoNarrate}
+          voiceStyle={state.voiceStyle}
+          voiceStyles={voiceStyles}
+          voiceEnabled={voiceEnabled}
           composeOnClick={composeOnClick}
           readOnly={state.readOnly}
           busy={busy}

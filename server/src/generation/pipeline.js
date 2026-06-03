@@ -22,7 +22,7 @@ import { stubPlannerOutput, stubClickLabel } from './stubPlanner.js';
 import { callDecideSearch, stubDecideSearch } from './decideSearch.js';
 import { searchWeb } from './searchWeb.js';
 import { runOcr } from './ocr.js';
-import { generateAudio } from './audio.js';
+import { generateAudio, detectLang, VOICE_STYLES, DEFAULT_VOICE_STYLE } from './audio.js';
 import { generateImageVariants, probeImageSize } from './imageVariants.js';
 import { isHashCancelled } from './cancelRegistry.js';
 import { deleteNodeCascade } from './deleteNode.js';
@@ -344,6 +344,67 @@ function imageUrlFor(canvasId, hash, ext) {
 
 function audioUrlFor(canvasId, hash, ext = 'm4a') {
   return `/api/canvas/${canvasId}/audio/${hash}.${ext}`;
+}
+
+// Re-narrate EVERY node in a canvas with a new flipbook-level voice mood.
+// Used by the "change voice" control in the TopBar: the user picks a new
+// style and we re-synthesise all already-generated nodes so the whole book
+// stays consistent. Persists tree.voice_style first (so any in-flight or
+// future node also adopts it), then walks tree.nodes, regenerating audio
+// sequentially (macOS `say` is single-process; serial keeps it tame) and
+// broadcasting AUDIO_READY + NODE_READY per node so live viewers update.
+// Returns { ok, style, updated, failed }.
+export async function resynthesizeCanvasAudio(canvas, voiceStyle) {
+  const style = VOICE_STYLES.includes(voiceStyle) ? voiceStyle : DEFAULT_VOICE_STYLE;
+  if (!config.enableAudio) return { ok: false, reason: 'audio disabled', style };
+
+  // Pin the new mood on the tree so it's authoritative for everyone.
+  let tree;
+  try {
+    tree = await readTree(canvas.id);
+  } catch {
+    return { ok: false, reason: 'tree read failed', style };
+  }
+  tree.voice_style = style;
+  await writeTree(canvas.id, tree);
+
+  const hashes = Object.keys(tree.nodes || {});
+  let updated = 0;
+  let failed = 0;
+  for (const hash of hashes) {
+    let node;
+    try { node = await readNode(canvas.id, hash); } catch { continue; }
+    // Skip nodes that are still being generated — their own audio pass will
+    // pick up the (now-pinned) tree.voice_style when it runs.
+    if (node.status === 'generating') continue;
+    const lang = detectLang(node.title, node.caption);
+    const audio = await generateAudio({
+      canvasId: canvas.id, hash,
+      title: node.title, caption: node.caption,
+      voiceStyle: style, lang,
+    });
+    if (!audio.ok) { failed++; continue; }
+    // Re-read so we merge onto whatever else changed meanwhile.
+    let base = node;
+    try { base = await readNode(canvas.id, hash); } catch { /* use closure */ }
+    const next = {
+      ...base,
+      audio: `audio/${hash}.${audio.ext}`,
+      audio_url: audioUrlFor(canvas.id, hash, audio.ext),
+      audio_voice: audio.voice,
+      audio_style: audio.style,
+    };
+    try {
+      await registerNode(canvas.id, next);
+    } catch (e) { log.warn(`[audio] resynth persist ${canvas.id}/${hash}: ${e?.message}`); failed++; continue; }
+    updated++;
+    broadcast(canvas, {
+      type: SseEvents.AUDIO_READY, canvasId: canvas.id, jobId: 'resynth', hash,
+      audioUrl: next.audio_url, voice: audio.voice, style: audio.style,
+    });
+    broadcast(canvas, { type: SseEvents.NODE_READY, canvasId: canvas.id, jobId: 'resynth', hash, node: next });
+  }
+  return { ok: true, style, updated, failed };
 }
 
 // Map an absolute seed-image upload path to its web-accessible URL via the
@@ -921,61 +982,64 @@ async function buildAndRegisterNode({
         broadcast(canvas, { type: SseEvents.NODE_READY, canvasId: canvas.id, jobId, hash, node: updated });
       })
       .catch((e) => log.warn(`[ocr] ${canvas.id}/${hash}: ${e?.message}`));
+  }
 
-    // 3) Narration audio (macOS `say`). The whole flipbook shares one voice
-    //    mood: the ROOT's planner picks `voice_style`, we persist it on the
-    //    tree, and every node reuses it. Re-reads the node before writing so
-    //    it merges with whatever the OCR pass wrote (they race).
-    if (config.enableAudio) {
-      (async () => {
-        let effectiveStyle = plannerJson.voice_style || 'neutral';
-        try {
-          const tree = await readTree(canvas.id);
-          if (!parentNode) {
-            // Root: record the chosen mood for the whole flipbook.
-            if (tree && tree.voice_style !== effectiveStyle) {
-              tree.voice_style = effectiveStyle;
-              await writeTree(canvas.id, tree);
-            }
-          } else if (tree?.voice_style) {
-            // Child: always inherit the flipbook-level mood for consistency.
-            effectiveStyle = tree.voice_style;
-          }
-        } catch { /* tree read failed — fall back to planner's pick */ }
-
-        const audio = await generateAudio({
-          canvasId: canvas.id, hash,
-          title: node.title, caption: node.caption,
-          voiceStyle: effectiveStyle, lang,
-        });
-        if (isHashCancelled(canvas.id, hash)) return;
-        if (!audio.ok) {
-          if (audio.reason && audio.reason !== 'audio disabled') {
-            log.warn(`[audio] ${canvas.id}/${hash}: ${audio.reason}`);
-          }
-          return;
+  // Narration audio (macOS `say`). Independent of the image — it reads the
+  // node's title + caption — so it runs for every node, including the SVG
+  // fallback (stub mode). The whole flipbook shares one voice mood: the
+  // ROOT's planner picks `voice_style`, we persist it on the tree, and every
+  // node reuses it. Re-reads the node before writing so it merges with
+  // whatever the OCR pass wrote (they race).
+  if (config.enableAudio) {
+    (async () => {
+      let effectiveStyle = plannerJson.voice_style || 'neutral';
+      try {
+        const tree = await readTree(canvas.id);
+        if (tree?.voice_style) {
+          // A flipbook-level mood is already pinned — either the user chose
+          // one at create time, or the root's planner recorded its pick.
+          // Both root and children defer to it so the voice stays consistent
+          // and a user override is never clobbered by the planner.
+          effectiveStyle = tree.voice_style;
+        } else if (!parentNode && tree) {
+          // Root, no pin yet: record the planner's pick for the whole book.
+          tree.voice_style = effectiveStyle;
+          await writeTree(canvas.id, tree);
         }
-        let base = node;
-        try { base = await readNode(canvas.id, hash); } catch { /* fall back to closure node */ }
-        const updated = {
-          ...base,
-          audio: `audio/${hash}.${audio.ext}`,
-          audio_url: audioUrlFor(canvas.id, hash, audio.ext),
-          audio_voice: audio.voice,
-          audio_style: audio.style,
-        };
-        if (isHashCancelled(canvas.id, hash)) return;
-        try {
-          await registerNode(canvas.id, updated);
-        } catch (e) { log.warn(`[audio] persist ${canvas.id}/${hash}: ${e?.message}`); }
-        if (isHashCancelled(canvas.id, hash)) return;
-        broadcast(canvas, {
-          type: SseEvents.AUDIO_READY, canvasId: canvas.id, jobId, hash,
-          audioUrl: updated.audio_url, voice: audio.voice, style: audio.style,
-        });
-        broadcast(canvas, { type: SseEvents.NODE_READY, canvasId: canvas.id, jobId, hash, node: updated });
-      })().catch((e) => log.warn(`[audio] ${canvas.id}/${hash}: ${e?.message}`));
-    }
+      } catch { /* tree read failed — fall back to planner's pick */ }
+
+      const audio = await generateAudio({
+        canvasId: canvas.id, hash,
+        title: node.title, caption: node.caption,
+        voiceStyle: effectiveStyle, lang,
+      });
+      if (isHashCancelled(canvas.id, hash)) return;
+      if (!audio.ok) {
+        if (audio.reason && audio.reason !== 'audio disabled') {
+          log.warn(`[audio] ${canvas.id}/${hash}: ${audio.reason}`);
+        }
+        return;
+      }
+      let base = node;
+      try { base = await readNode(canvas.id, hash); } catch { /* fall back to closure node */ }
+      const updated = {
+        ...base,
+        audio: `audio/${hash}.${audio.ext}`,
+        audio_url: audioUrlFor(canvas.id, hash, audio.ext),
+        audio_voice: audio.voice,
+        audio_style: audio.style,
+      };
+      if (isHashCancelled(canvas.id, hash)) return;
+      try {
+        await registerNode(canvas.id, updated);
+      } catch (e) { log.warn(`[audio] persist ${canvas.id}/${hash}: ${e?.message}`); }
+      if (isHashCancelled(canvas.id, hash)) return;
+      broadcast(canvas, {
+        type: SseEvents.AUDIO_READY, canvasId: canvas.id, jobId, hash,
+        audioUrl: updated.audio_url, voice: audio.voice, style: audio.style,
+      });
+      broadcast(canvas, { type: SseEvents.NODE_READY, canvasId: canvas.id, jobId, hash, node: updated });
+    })().catch((e) => log.warn(`[audio] ${canvas.id}/${hash}: ${e?.message}`));
   }
 
   return { node, cacheHit: false };

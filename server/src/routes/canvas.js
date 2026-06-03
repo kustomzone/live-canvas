@@ -2,10 +2,12 @@ import express from 'express';
 import { createCanvas, getCanvas, listCanvases, deleteCanvas } from '../store/canvasStore.js';
 import { readTree } from '../store/treeStore.js';
 import { isSafeId } from '../store/paths.js';
-import { enqueueRootGeneration } from '../generation/pipeline.js';
+import { enqueueRootGeneration, resynthesizeCanvasAudio } from '../generation/pipeline.js';
 import { normalizeLang } from '../generation/language.js';
 import { uploadMemory, persistUpload } from './upload.js';
 import { buildCanvasExport } from '../export/buildExport.js';
+import { VOICE_STYLES, DEFAULT_VOICE_STYLE } from '../generation/audio.js';
+import { config } from '../config.js';
 
 export const canvasRouter = express.Router();
 
@@ -14,6 +16,26 @@ export const canvasRouter = express.Router();
 function parseOrientation(v) {
   return v === 'portrait' ? 'portrait' : 'landscape';
 }
+
+// Whitelist a requested narration voice style against the known moods.
+// Returns the style string or null when absent / invalid (→ let the planner
+// pick at generation time).
+function parseVoiceStyle(v) {
+  return typeof v === 'string' && VOICE_STYLES.includes(v) ? v : null;
+}
+
+// Narration voice styles the server offers. The candidate list is
+// server-owned (the client never invents voice names); the user picks an
+// abstract mood and the server maps it to a concrete `say` voice + rate per
+// language. `enabled` reflects the ENABLE_AUDIO env switch so the client can
+// hide the control when narration is off server-side.
+canvasRouter.get('/voices', (_req, res) => {
+  res.json({
+    enabled: config.enableAudio,
+    default: DEFAULT_VOICE_STYLE,
+    styles: VOICE_STYLES,
+  });
+});
 
 canvasRouter.get('/', async (req, res) => {
   // Pagination — `limit` opts into the paginated shape `{items,total,hasMore}`.
@@ -43,11 +65,12 @@ canvasRouter.post('/', async (req, res) => {
   const { topic, branches, webSearch } = req.body || {};
   const lang = normalizeLang(req.body?.lang);
   const orientation = parseOrientation(req.body?.orientation);
+  const voiceStyle = parseVoiceStyle(req.body?.voiceStyle);
   if (!topic || typeof topic !== 'string' || !topic.trim()) {
     return res.status(400).json({ error: 'topic_required' });
   }
   try {
-    const runtime = await createCanvas({ topic: topic.trim(), branches: Number(branches) || 5, orientation });
+    const runtime = await createCanvas({ topic: topic.trim(), branches: Number(branches) || 5, orientation, voiceStyle });
     // webSearch is an opt-out boolean; default true.
     const webSearchEnabled = webSearch !== false;
     const jobId = enqueueRootGeneration(runtime, { webSearchEnabled, lang });
@@ -80,9 +103,10 @@ canvasRouter.post('/upload', uploadMemory.single('image'), async (req, res) => {
   }
   const webSearchEnabled = req.body?.webSearch !== '0' && req.body?.webSearch !== false;
   const orientation = parseOrientation(req.body?.orientation);
+  const voiceStyle = parseVoiceStyle(req.body?.voiceStyle);
   try {
     const finalTopic = topic || '__pending__';
-    const runtime = await createCanvas({ topic: finalTopic, orientation });
+    const runtime = await createCanvas({ topic: finalTopic, orientation, voiceStyle });
     let seedImagePath = null;
     if (file) {
       seedImagePath = await persistUpload(runtime.id, 'seed', file);
@@ -107,6 +131,26 @@ canvasRouter.get('/:id/tree', async (req, res) => {
   } catch {
     res.status(404).json({ error: 'not_found' });
   }
+});
+
+// Change the flipbook's narration voice and re-synthesise every node's audio
+// with the new mood. The candidate styles come from GET /voices; the client
+// sends an abstract mood here, never a raw voice name. Returns immediately
+// with the accepted style; re-narration runs async and streams AUDIO_READY +
+// NODE_READY per node over SSE so open viewers update live.
+canvasRouter.post('/:id/voice', async (req, res) => {
+  const { id } = req.params;
+  if (!isSafeId(id)) return res.status(400).json({ error: 'bad_id' });
+  const voiceStyle = parseVoiceStyle(req.body?.voiceStyle);
+  if (!voiceStyle) return res.status(400).json({ error: 'bad_voice_style', styles: VOICE_STYLES });
+  if (!config.enableAudio) return res.status(409).json({ error: 'audio_disabled' });
+  const runtime = await getCanvas(id);
+  if (!runtime) return res.status(404).json({ error: 'not_found' });
+  // Fire-and-forget the (potentially slow) re-synthesis so the request
+  // returns promptly; progress is delivered over the canvas's SSE stream.
+  resynthesizeCanvasAudio(runtime, voiceStyle)
+    .catch((e) => { /* logged inside; swallow to avoid unhandled rejection */ void e; });
+  res.status(202).json({ ok: true, voiceStyle });
 });
 
 // Bulk-delete canvases. Body: { ids: string[] }. Each id is validated;

@@ -490,10 +490,6 @@ export function Canvas({ canvasId, node, tree, imageLoading, pendingClicks, read
     <>
       {showChrome && node && (
         <h2 className={styles.title}>
-          {isGenerating && <span className={styles.genChip}><span className={styles.genDot} />{t('preview.generating', lang)}</span>}
-          {node.title}
-          {isGenerating && <span className={styles.genCaret} />}
-          {node.sources && node.sources.length > 0 && <SourcesBadge sources={node.sources} />}
           {!isGenerating && audioUrl && (
             <button
               type="button"
@@ -505,6 +501,10 @@ export function Canvas({ canvasId, node, tree, imageLoading, pendingClicks, read
               <Icon name={playing ? 'stop' : 'play'} size={13} />
             </button>
           )}
+          {isGenerating && <span className={styles.genChip}><span className={styles.genDot} />{t('preview.generating', lang)}</span>}
+          {node.title}
+          {isGenerating && <span className={styles.genCaret} />}
+          {node.sources && node.sources.length > 0 && <SourcesBadge sources={node.sources} />}
           {tree && onJumpToHash && (
             <TreeBadge tree={tree} currentHash={node.hash} onJump={onJumpToHash} />
           )}

@@ -27,6 +27,7 @@ type Props = {
   onToggleEditMode: () => void;
   onToggleWebSearch: () => void;
   onToggleAutoNarrate: () => void;
+  onSelectVoice: (style: string | null) => void;
   onToggleComposeOnClick: () => void;
   onToggleOrientation: () => void;
   onRegenerate?: () => void;
@@ -40,6 +41,9 @@ type Props = {
   editMode: boolean;
   webSearch: boolean;
   autoNarrate: boolean;
+  voiceStyle: string | null;
+  voiceStyles: string[];
+  voiceEnabled: boolean;
   composeOnClick: boolean;
   orientation: 'landscape' | 'portrait';
   readOnly: boolean;
@@ -51,10 +55,10 @@ export function TopBar(props: Props) {
     view, topic, currentNode, draftTopic, onDraftTopicChange, onSubmitTopic,
     onBackToGallery, onJumpBreadcrumb, onShare, onToggleFullscreen, onToggleChrome,
     onToggleLabels, onToggleWebSearch, onToggleComposeOnClick, onToggleOrientation, onRegenerate,
-    onToggleAutoNarrate,
+    onToggleAutoNarrate, onSelectVoice,
     onExportPreview,
     attachment, onAttachmentChange,
-    fullscreen, showChrome, showLabels, editMode, webSearch, autoNarrate, composeOnClick, orientation, readOnly, busy,
+    fullscreen, showChrome, showLabels, editMode, webSearch, autoNarrate, voiceStyle, voiceStyles, voiceEnabled, composeOnClick, orientation, readOnly, busy,
   } = props;
 
   const [lang, setLang] = useLang();
@@ -236,6 +240,16 @@ export function TopBar(props: Props) {
           // Auto-narrate is a global playback preference — offered on the
           // canvas view (where narration actually plays), even in read-only.
           onToggleAutoNarrate={view === 'canvas' ? onToggleAutoNarrate : undefined}
+          // Voice picker: offered when the server has narration enabled. On the
+          // gallery it sets the create-time default; on the canvas it changes
+          // the current book's voice (re-synthesises all node audio). Hidden in
+          // read-only preview (no authoring) and when audio is disabled.
+          onSelectVoice={voiceEnabled && !readOnly ? onSelectVoice : undefined}
+          voiceStyle={voiceStyle}
+          voiceStyles={voiceStyles}
+          // On the canvas the picker shows 'auto' as a no-op label (the book
+          // already has a pinned mood), so only offer concrete moods there.
+          voiceAllowAuto={view === 'gallery'}
           onToggleLabels={view === 'canvas' ? onToggleLabels : undefined}
           // Edit mode is canvas-only and never offered in read-only preview.
           // TEMPORARILY HIDDEN: pass undefined so the menu item doesn't render.
@@ -285,6 +299,10 @@ type MoreMenuProps = {
   setLang: (l: 'zh' | 'en') => void;
   onToggleWebSearch?: () => void;
   onToggleAutoNarrate?: () => void;
+  onSelectVoice?: (style: string | null) => void;
+  voiceStyle?: string | null;
+  voiceStyles?: string[];
+  voiceAllowAuto?: boolean;
   onToggleLabels?: () => void;
   onToggleEditMode?: () => void;
   onToggleComposeOnClick?: () => void;
@@ -304,9 +322,12 @@ function MoreMenu({
   lang, setLang,
   onToggleWebSearch, onToggleLabels, onToggleComposeOnClick, onToggleOrientation, onRegenerate, regenerateInfo,
   onExportPreview, onToggleEditMode, onToggleAutoNarrate,
+  onSelectVoice, voiceStyle, voiceStyles, voiceAllowAuto,
   webSearch, autoNarrate, showLabels, editMode, composeOnClick, orientation,
 }: MoreMenuProps) {
   const [open, setOpen] = useState(false);
+  // Voice submenu expansion (the moods are listed inline under the row).
+  const [voiceOpen, setVoiceOpen] = useState(false);
   const wrapRef = useRef<HTMLDivElement | null>(null);
   const isMobile = useIsMobile();
   // Theme preference (system / light / dark). Toggled inline; keeping the
@@ -477,6 +498,47 @@ function MoreMenu({
             {autoNarrate ? <Icon name="current" size={10} /> : null}
           </span>
         </button>
+      )}
+      {onSelectVoice && (
+        <>
+          <button
+            type="button"
+            className={styles.moreItem}
+            role="menuitem"
+            aria-haspopup="true"
+            aria-expanded={voiceOpen}
+            onClick={() => setVoiceOpen((v) => !v)}
+          >
+            <Icon name="narrate" size={14} />
+            <span className={styles.moreItemLabel}>{t('topbar.voice', lang)}</span>
+            <span className={styles.moreItemStateText} aria-hidden>
+              {t(voiceStyle ? (`voice.${voiceStyle}` as Parameters<typeof t>[0]) : 'voice.auto', lang)}
+            </span>
+          </button>
+          {voiceOpen && (
+            <div className={styles.voiceSubmenu} role="group">
+              {(voiceAllowAuto ? [null, ...(voiceStyles ?? [])] : (voiceStyles ?? [])).map((s) => {
+                const selected = (voiceStyle ?? null) === (s ?? null);
+                const key = s ? (`voice.${s}` as Parameters<typeof t>[0]) : 'voice.auto';
+                return (
+                  <button
+                    key={s ?? 'auto'}
+                    type="button"
+                    className={`${styles.moreItem} ${styles.voiceItem} ${selected ? styles.moreItemOn : ''}`}
+                    role="menuitemradio"
+                    aria-checked={selected}
+                    onClick={() => { onSelectVoice(s); setVoiceOpen(false); setOpen(false); }}
+                  >
+                    <span className={styles.moreItemLabel}>{t(key, lang)}</span>
+                    <span className={styles.moreItemState} aria-hidden>
+                      {selected ? <Icon name="current" size={10} /> : null}
+                    </span>
+                  </button>
+                );
+              })}
+            </div>
+          )}
+        </>
       )}
       {onToggleLabels && (
         <button

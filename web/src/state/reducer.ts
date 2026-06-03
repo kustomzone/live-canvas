@@ -1,5 +1,5 @@
 import type { AppState, Node, SseEvent, Tree, Toast, View, PendingClick } from './types';
-import { initialState, persistWebSearchPref, persistOrientationPref, persistAutoNarratePref } from './types';
+import { initialState, persistWebSearchPref, persistOrientationPref, persistAutoNarratePref, persistVoiceStylePref } from './types';
 
 export type Action =
   | { type: 'reset' }
@@ -18,6 +18,7 @@ export type Action =
   | { type: 'toggle_web_search' }
   | { type: 'toggle_auto_narrate' }
   | { type: 'mark_narrated'; hash: string }
+  | { type: 'set_voice_style'; voiceStyle: string | null }
   | { type: 'set_orientation'; orientation: 'landscape' | 'portrait' }
   | { type: 'consume_drill_origin' }
   | { type: 'add_toast'; toast: Omit<Toast, 'id'> }
@@ -63,6 +64,7 @@ export function reducer(state: AppState, action: Action): AppState {
           // Preserve UI prefs that aren't tied to a specific canvas.
           webSearch: state.webSearch,
           orientation: state.orientation,
+          voiceStyle: state.voiceStyle,
         };
       }
       return { ...state, view: action.view };
@@ -79,6 +81,10 @@ export function reducer(state: AppState, action: Action): AppState {
         webSearch: state.webSearch,
         // The new canvas was created with the current orientation pref.
         orientation: state.orientation,
+        // Carry the create-time voice pref into the new canvas so the TopBar
+        // shows what it was created with (the planner may still refine an
+        // 'auto' choice; tree adoption in set_tree reconciles that).
+        voiceStyle: state.voiceStyle,
       };
 
     case 'set_share_mode':
@@ -103,6 +109,10 @@ export function reducer(state: AppState, action: Action): AppState {
         orientation: action.tree.orientation === 'portrait' ? 'portrait'
           : action.tree.orientation === 'landscape' ? 'landscape'
           : state.orientation,
+        // Adopt the canvas's pinned narration mood so the TopBar reflects the
+        // voice this book actually uses. Falls back to the current pref for
+        // legacy trees that predate the field (or haven't picked one yet).
+        voiceStyle: action.tree.voice_style ?? state.voiceStyle,
       };
 
     case 'navigate': {
@@ -199,6 +209,18 @@ export function reducer(state: AppState, action: Action): AppState {
     case 'mark_narrated': {
       if (state.narratedHashes[action.hash]) return state;
       return { ...state, narratedHashes: { ...state.narratedHashes, [action.hash]: true } };
+    }
+
+    case 'set_voice_style': {
+      // Persist as the create-time default. When a canvas is open, the caller
+      // (App) also POSTs /voice to re-synthesise; here we only track the
+      // selection so the UI radio reflects it. Mirror it onto the open tree so
+      // the selector stays correct after a reload reads tree.voice_style.
+      persistVoiceStylePref(action.voiceStyle);
+      const tree = state.tree
+        ? { ...state.tree, voice_style: action.voiceStyle }
+        : state.tree;
+      return { ...state, voiceStyle: action.voiceStyle, tree };
     }
 
     case 'set_orientation': {

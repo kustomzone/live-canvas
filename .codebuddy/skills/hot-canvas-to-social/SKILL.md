@@ -44,13 +44,13 @@ WebSearch 热点 → [hot-canvas-batch] 产出 N 个画册 → [canvas-to-social
 
 ## 阶段 0 —— 选题（你来做，需联网）
 用 WebSearch 搜当日热点，挑 N 个流量高且**非政治敏感**的选题。为每个选题抓具体事实
-（数字、事件、名称）作为下钻 label。把选题写成 `themes.json`（结构见
+（数字、事件、名称）作为下钻 label。把选题写成 `<root>/themes.json`（结构见
 `../hot-canvas-batch/SKILL.md` 中的 `themes.example.json`）。
 
 ## 阶段 1 —— 建册（调用 hot-canvas-batch）
 跑一条命令，脚本自启服务、建册、自关服务、写历史：
 ```bash
-node ../hot-canvas-batch/scripts/build_canvases.mjs --themes themes.json
+node ../hot-canvas-batch/scripts/build_canvases.mjs --themes <root>/themes.json
 ```
 （`ORIENTATION`/`DRILL_PER`/`RECENT_DAYS` 等 env 见该 skill。近 90 天同主题会被自动去重。）
 

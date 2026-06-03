@@ -26,6 +26,15 @@ export const VOICE_STYLES = Object.freeze([
 
 export const DEFAULT_VOICE_STYLE = 'neutral';
 
+// Detect zh vs en from a node's prose. Nodes don't persist the `lang` they
+// were generated with, so re-synthesis (and any caller without a lang in
+// hand) infers it: any CJK character ⇒ Chinese, otherwise English. Used to
+// pick the right VOICE_MAP table when re-narrating an existing node.
+export function detectLang(...texts) {
+  const joined = texts.filter((t) => typeof t === 'string').join(' ');
+  return /[\u3400-\u9FFF\uF900-\uFAFF\u3040-\u30FF]/.test(joined) ? 'zh' : 'en';
+}
+
 // mood → { voice, rate } per language. rate is words/min passed to `say -r`.
 // Chinese system voices are limited, so zh leans on rate + the few named
 // voices to differentiate styles; en can use strongly characterful voices.

@@ -462,6 +462,18 @@
   margin: 4px 4px;
 }
 
+/* Voice picker submenu — the moods are listed inline, indented under the
+   "Narration voice" row. Reuses .moreItem styling; .voiceItem just adds the
+   left indent so they read as children of the parent row. */
+.voiceSubmenu {
+  display: flex;
+  flex-direction: column;
+}
+
+.voiceItem {
+  padding-left: 30px;
+}
+
 .moreItemLabel {
   flex: 1;
   white-space: nowrap;

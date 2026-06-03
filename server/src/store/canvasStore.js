@@ -21,7 +21,7 @@ async function ensureCanvasDirs(id) {
   await fs.mkdir(path.join(dir, 'images'), { recursive: true });
 }
 
-export async function createCanvas({ topic, branches = 5, orientation = 'landscape' }) {
+export async function createCanvas({ topic, branches = 5, orientation = 'landscape', voiceStyle = null }) {
   if (!topic || typeof topic !== 'string' || !topic.trim()) {
     throw new Error('topic required');
   }
@@ -39,10 +39,12 @@ export async function createCanvas({ topic, branches = 5, orientation = 'landsca
     root: null,
     branches,
     style: 'isometric-illustration',
-    // Narration mood for the whole flipbook. The root node's planner picks
-    // this; every node reuses it so the voice stays consistent. null until
-    // the root is generated.
-    voice_style: null,
+    // Narration mood for the whole flipbook. When the user picked one at
+    // create time we pin it here so the pipeline uses it instead of letting
+    // the root's planner choose; otherwise null and the planner picks (and
+    // the pipeline writes its pick back here). Every node reuses this value
+    // so the voice stays consistent.
+    voice_style: typeof voiceStyle === 'string' && voiceStyle ? voiceStyle : null,
     orientation: orient,
     nodes: {},
   };

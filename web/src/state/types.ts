@@ -77,6 +77,9 @@ export type Node = {
   branches: number;
   style: string;
   orientation?: 'landscape' | 'portrait';
+  // Flipbook-level narration mood (one of the server's VOICE_STYLES). null
+  // until the root planner picks one (or the user pins one at create time).
+  voice_style?: string | null;
   nodes: Record<string, { title: string; depth: number; parent: string | null; children: string[]; status?: 'generating' }>;
 };
 
@@ -198,6 +201,11 @@ export type AppState = {
   // Hashes already auto-narrated this session, so returning to a node doesn't
   // replay automatically (manual play still works). Session-only.
   narratedHashes: Record<string, true>;
+  // User's chosen narration voice mood (one of the server's VOICE_STYLES) or
+  // null = "let the planner auto-pick". At create time it pins tree.voice_style;
+  // on an open canvas, changing it re-synthesises all nodes. Persisted to
+  // localStorage as a create-time default.
+  voiceStyle: string | null;
   // Image orientation for the NEXT canvas to be created. Per-canvas: fixed at
   // creation time. When viewing an existing canvas this reflects that
   // canvas's orientation (adopted from its manifest); on the gallery it's the
@@ -274,6 +282,26 @@ export function persistAutoNarratePref(on: boolean) {
   try { window.localStorage.setItem(AUTO_NARRATE_KEY, on ? '1' : '0'); } catch {}
 }
 
+// localStorage-backed pref for the create-time narration voice. Stored as the
+// raw style string; absent / empty means "auto" (let the planner pick). The
+// candidate styles are server-owned (GET /api/canvas/voices); we don't
+// validate the stored value here — an unknown value is harmlessly ignored by
+// the server's whitelist and falls back to auto.
+const VOICE_STYLE_KEY = 'flipbook_voice_style';
+function readVoiceStylePref(): string | null {
+  if (typeof window === 'undefined') return null;
+  try {
+    const v = window.localStorage.getItem(VOICE_STYLE_KEY);
+    if (v && v !== 'auto') return v;
+  } catch { /* localStorage unavailable */ }
+  return null;
+}
+
+export function persistVoiceStylePref(style: string | null) {
+  if (typeof window === 'undefined') return;
+  try { window.localStorage.setItem(VOICE_STYLE_KEY, style ?? 'auto'); } catch {}
+}
+
 export const initialState: AppState = {
   view: 'gallery',
   canvasId: null,
@@ -295,6 +323,7 @@ export const initialState: AppState = {
   webSearch: readWebSearchPref(),
   orientation: readOrientationPref(),
   autoNarrate: readAutoNarratePref(),
+  voiceStyle: readVoiceStylePref(),
   narratedHashes: {},
   lastDrillFrom: null,
   rootProgress: null,

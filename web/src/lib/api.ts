@@ -5,7 +5,7 @@ const API = '/api';
 
 export async function createCanvas(
   topic: string,
-  opts: { webSearch?: boolean; image?: File | Blob | null; lang?: 'zh' | 'en'; orientation?: 'landscape' | 'portrait' } = {},
+  opts: { webSearch?: boolean; image?: File | Blob | null; lang?: 'zh' | 'en'; orientation?: 'landscape' | 'portrait'; voiceStyle?: string | null } = {},
 ): Promise<{ canvasId: string; jobId: string }> {
   // When the user attaches an image, switch to multipart so the server's
   // /upload variant kicks in and seeds the canvas with the user's picture.
@@ -15,6 +15,7 @@ export async function createCanvas(
     fd.append('lang', opts.lang ?? 'zh');
     if (opts.webSearch === false) fd.append('webSearch', '0');
     if (opts.orientation) fd.append('orientation', opts.orientation);
+    if (opts.voiceStyle) fd.append('voiceStyle', opts.voiceStyle);
     fd.append('image', opts.image, 'seed.png');
     const res = await fetch(`${API}/canvas/upload`, { method: 'POST', body: fd });
     if (!res.ok) throw new Error(`createCanvas (upload) failed: ${res.status}`);
@@ -23,9 +24,34 @@ export async function createCanvas(
   const res = await fetch(`${API}/canvas`, {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({ topic, webSearch: opts.webSearch, lang: opts.lang ?? 'zh', orientation: opts.orientation ?? 'landscape' }),
+    body: JSON.stringify({ topic, webSearch: opts.webSearch, lang: opts.lang ?? 'zh', orientation: opts.orientation ?? 'landscape', voiceStyle: opts.voiceStyle ?? undefined }),
   });
   if (!res.ok) throw new Error(`createCanvas failed: ${res.status}`);
+  return res.json();
+}
+
+// Fetch the server-owned candidate narration voice styles. The client never
+// invents voice names — it picks an abstract mood from this list. `enabled`
+// reflects the server's ENABLE_AUDIO switch so the UI can hide the control.
+export async function getVoices(): Promise<{ enabled: boolean; default: string; styles: string[] }> {
+  const res = await fetch(`${API}/canvas/voices`);
+  if (!res.ok) throw new Error(`getVoices failed: ${res.status}`);
+  return res.json();
+}
+
+// Change a canvas's narration voice and re-synthesise all node audio. Returns
+// once the server has accepted the change (202); the actual re-narration runs
+// async and streams AUDIO_READY + NODE_READY over the canvas SSE stream.
+export async function setCanvasVoice(canvasId: string, voiceStyle: string): Promise<{ ok: boolean; voiceStyle: string }> {
+  const res = await fetch(`${API}/canvas/${canvasId}/voice`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ voiceStyle }),
+  });
+  if (!res.ok) {
+    const txt = await res.text();
+    throw new Error(`setCanvasVoice failed: ${res.status} ${txt}`);
+  }
   return res.json();
 }
 
