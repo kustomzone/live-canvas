@@ -45,8 +45,7 @@ python3 scripts/export_canvas.py <canvasId> \
 
 ## 阶段二 —— 发布（可选，按平台分流）
 
-**必须**：用 `browser-harness` CLI（CDP）驱动用户已登录的 Chrome。其用法文档见
-`skills/` 下的同级 skill **`browser-harness`**（连接/上传/截图等机制都查它）。
+**必须**：用 `browser` SKILL（CDP）驱动用户已登录的 Chrome。
 `browser-harness` 命令需已在 `$PATH` 上（单独安装）。
 
 按目标平台打开对应 reference 逐步执行：
@@ -70,6 +69,11 @@ python3 scripts/export_canvas.py <canvasId> \
 ## 唯一铁律
 **永远不点最终的「发布」按钮。** 它不可逆且对外公开。填好所有内容、校验，然后把
 最后一步交给用户。「存草稿」仅在用户明确要求时才点。
+
+## 不要读图
+**不要用 Read 工具去查看/识别导出的图片本身。** 文案一律基于 `文案.md` 的文字图说改写，
+图片只按 `manifest.json` 的阅读顺序原样上传。无需打开、预览或多模态识别任何 `.png`。
+（核对上传结果时也用 `js()` 读取页面 DOM/计数，而非看图。）
 
 ## 常见错误
 - **跨步骤复用坐标。** 页面会滚动和重渲染；每次点击前都按文字/placeholder 重新查询

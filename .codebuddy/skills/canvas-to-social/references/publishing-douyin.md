@@ -2,7 +2,7 @@
 
 导出阶段是确定性的（一个脚本）。**发布不是**——抖音没有面向个人的图文发布公开 API，
 所以我们用 `browser-harness` CLI（CDP，接管用户已登录的 Chrome）操作创作者中心网页
-（`creator.douyin.com`）。其用法文档见 `skills/` 下的同级 `browser-harness` skill。
+（`creator.douyin.com`）。其用法见 `browser` skill。
 
 > **铁律：** 永远不要自己点最终的「发布」按钮。发布是不可逆、对外公开的动作。把所有
 > 内容填好后停手，把最后一步交给用户。仅当用户明确要求时才可点「存草稿」。
