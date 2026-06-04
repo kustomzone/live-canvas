@@ -2,6 +2,7 @@
   {
     "topic": "在此替换为当日热点主题（一句话、可作为画册根图标题）",
     "aliases": ["去重用关键词1", "去重用关键词2", "近义说法"],
+    "style": "按主题挑：科技/数据→glassmorphism，娱乐八卦→popart，财经高端→goldluxe，育儿萌宠→kawaii，文化节日→papercut，游戏怀旧→pixel，潮流音乐→vaporwave，美妆数码→holographic，文艺活动→risograph，旅行慢生活→airbrush70s，生活教程→claymorphism，揭秘悬疑→cinematic（留空则用默认米色 isometric 百科风）",
     "branches": 5,
     "drills": [
       "下钻子图1：一个具体的事实/角度（用 label 锁定主题，不靠坐标）",
@@ -19,6 +20,7 @@
   {
     "topic": "第二个热点主题（可选；DRILL_PER 控制实际使用前 N 条 drills）",
     "aliases": ["关键词A", "关键词B"],
+    "style": "挑一个跟上面不同的风格，避免一批画册风格趋同",
     "branches": 5,
     "drills": [
       "子图1", "子图2", "子图3", "子图4", "子图5",

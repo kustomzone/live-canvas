@@ -20,10 +20,10 @@
 //   --keep-server       don't kill the server on exit (debugging).
 //   PORT                fixed port (default: an auto-picked free port).
 //   ORIENTATION         portrait | landscape (default portrait).
-//   STYLE               douyin to use the bundled vertical "Douyin viral
-//                       poster" prompt pack (prompts-douyin/); unset => the
-//                       project's original prompts. An explicit PROMPTS_DIR
-//                       always overrides STYLE.
+//   STYLE               comma-separated style names for round-robin across canvases,
+//                         e.g. "popart,kawaii,pixel". Each theme may also carry a
+//                         "style" field to override. Priority:
+//                         explicit PROMPTS_DIR > theme.style > STYLE round-robin > default.
 //   PROMPTS_DIR         override the prompt template dir directly (wins over STYLE).
 //   RECENT_DAYS         dedup window in days (default 90).
 //   DRILL_PER           drilldown children per canvas (default 10).
@@ -33,7 +33,7 @@
 //   ENABLE_AUDIO        1 to re-enable macOS `say` narration (default 0 —
 //                       off for batch builds for the same reason).
 //   DRY_RUN=1           start server, print dedup plan, build nothing, stop server.
-
+//
 import fs from 'node:fs/promises';
 import fssync from 'node:fs';
 import path from 'node:path';
@@ -72,21 +72,36 @@ const DRY_RUN = process.env.DRY_RUN === '1';
 const ENABLE_OCR = process.env.ENABLE_OCR === '1' ? '1' : '0';
 const ENABLE_AUDIO = process.env.ENABLE_AUDIO === '1' ? '1' : '0';
 
-// Visual style switch (opt-in). STYLE=douyin swaps the prompt templates for the
-// vertical "Douyin viral poster" pack bundled with this skill, by defaulting
-// PROMPTS_DIR to it. An explicit PROMPTS_DIR always wins. Unset/anything else
-// => the project's original prompts (server falls back to app/prompts/).
-const STYLE = (process.env.STYLE || '').toLowerCase();
+// Visual style switch (opt-in). STYLE accepts comma-separated style names for
+// round-robin across multiple canvases, e.g. STYLE=popart,kawaii,pixel.
+// Each theme in themes.json may also carry a "style" field to override.
+// Priority: explicit PROMPTS_DIR > theme.style > STYLE round-robin > project default.
+const STYLE_ENV = (process.env.STYLE || '').toLowerCase();
+const STYLE_LIST = STYLE_ENV ? STYLE_ENV.split(',').filter(Boolean) : [];
+let styleIdx = 0;
 // scripts/ -> hot-canvas-batch/
 const SKILL_DIR = path.resolve(__dirname, '..');
-const DOUYIN_PROMPTS_DIR = path.join(SKILL_DIR, 'prompts-douyin');
-let PROMPTS_DIR = process.env.PROMPTS_DIR || '';
-if (!PROMPTS_DIR && STYLE === 'douyin') {
-  if (!fssync.existsSync(DOUYIN_PROMPTS_DIR)) {
-    throw new Error(`STYLE=douyin but prompt pack not found: ${DOUYIN_PROMPTS_DIR}`);
+
+function resolvePromptsDir(styleName) {
+  if (!styleName) return '';
+  const dir = path.join(SKILL_DIR, `prompts-${styleName}`);
+  if (!fssync.existsSync(dir)) {
+    throw new Error(`style "${styleName}" not found: ${dir}`);
   }
-  PROMPTS_DIR = DOUYIN_PROMPTS_DIR;
+  return dir;
 }
+
+// Validate all named styles up front (empty STYLE_LIST => skip).
+if (STYLE_LIST.length) {
+  for (const s of STYLE_LIST) resolvePromptsDir(s);
+}
+
+// Per-server state (may restart if style changes between themes).
+let serverProc = null;
+let shuttingDown = false;
+let currentPromptsDir = '';
+let currentPort = 0;
+let BASE_URL = '';
 
 const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
 
@@ -104,9 +119,6 @@ function findFreePort() {
 }
 
 // ---- server lifecycle ---------------------------------------------------
-let serverProc = null;
-let shuttingDown = false;
-
 function shutdown() {
   if (shuttingDown) return;
   shuttingDown = true;
@@ -126,38 +138,65 @@ process.on('exit', shutdown);
 process.on('SIGINT', () => { shutdown(); process.exit(130); });
 process.on('SIGTERM', () => { shutdown(); process.exit(143); });
 
-async function startServer(port) {
+async function startServer(port, promptsDir) {
   const entry = path.join(APP_DIR, 'server', 'src', 'index.js');
   if (!fssync.existsSync(entry)) {
     throw new Error(`server entry not found: ${entry} (pass --app-dir to point at the flipbook app root)`);
   }
   const logPath = path.join(os.tmpdir(), `flipbook-server-${port}.log`);
   const logFd = fssync.openSync(logPath, 'a');
+  const serverEnv = {
+    ...process.env,
+    ENABLE_CODEBUDDY: '1',
+    IMAGE_PROVIDER: 'codebuddy',
+    ENABLE_OCR,
+    ENABLE_AUDIO,
+    PORT: String(port),
+    HOST: '127.0.0.1',
+  };
+  if (promptsDir) serverEnv.PROMPTS_DIR = promptsDir;
   serverProc = spawn('node', ['server/src/index.js'], {
     cwd: APP_DIR,
-    env: {
-      ...process.env,
-      ENABLE_CODEBUDDY: '1',
-      IMAGE_PROVIDER: 'codebuddy',
-      // Skip the post-image OCR / narration passes by default (see flags above).
-      ENABLE_OCR,
-      ENABLE_AUDIO,
-      // Style pack (empty unless STYLE=douyin or an explicit PROMPTS_DIR was set).
-      ...(PROMPTS_DIR ? { PROMPTS_DIR } : {}),
-      PORT: String(port),
-      HOST: '127.0.0.1',
-    },
+    env: serverEnv,
     stdio: ['ignore', logFd, logFd],
   });
   serverProc.on('exit', (code, sig) => {
     if (!shuttingDown) console.error(`[server] exited early code=${code} sig=${sig} — see ${logPath}`);
   });
-  console.log(`[server] spawned pid=${serverProc.pid} port=${port} log=${logPath}`);
+  currentPromptsDir = promptsDir || '';
+  currentPort = port;
+  const styleTag = promptsDir ? ` style=${path.basename(promptsDir).replace('prompts-', '')}` : '';
+  console.log(`[server] spawned pid=${serverProc.pid} port=${port} log=${logPath}${styleTag}`);
   return logPath;
 }
 
+// Restart server only if promptsDir changes (style switch).
+async function ensureServer(promptsDir) {
+  const pd = promptsDir || '';
+  const needsRestart = serverProc && currentPromptsDir !== pd;
+  if (needsRestart) {
+    console.log(`[server] style changed, restarting...`);
+    shutdown();
+    await sleep(2000);
+    // Reset state after shutdown.
+    serverProc = null;
+    shuttingDown = false;
+  }
+  if (!serverProc || serverProc.exitCode !== null) {
+    const port = process.env.PORT ? Number(process.env.PORT) : await findFreePort();
+    currentPort = port;
+    BASE_URL = `http://127.0.0.1:${port}`;
+    await startServer(port, promptsDir);
+    await waitServerReady();
+  } else {
+    // Server already running with correct style — just ensure BASE_URL is set.
+    if (!BASE_URL) {
+      BASE_URL = `http://127.0.0.1:${currentPort}`;
+    }
+  }
+}
+
 // ---- HTTP helpers -------------------------------------------------------
-let BASE_URL = '';
 async function api(method, urlPath, body) {
   const res = await fetch(`${BASE_URL}${urlPath}`, {
     method,
@@ -271,34 +310,57 @@ async function loadThemes(themesPath) {
   return arr;
 }
 
+// Pick the promptsDir for a given theme (by index in the themes array).
+function pickPromptsDir(themeIdx, theme) {
+  // 1. Explicit PROMPTS_DIR always wins.
+  if (process.env.PROMPTS_DIR) return process.env.PROMPTS_DIR;
+  // 2. Per-theme "style" field overrides round-robin.
+  if (theme && theme.style) return resolvePromptsDir(theme.style);
+  // 3. Round-robin from STYLE_LIST.
+  if (STYLE_LIST.length) {
+    const s = STYLE_LIST[themeIdx % STYLE_LIST.length];
+    return resolvePromptsDir(s);
+  }
+  // 4. Default: empty => don't pass PROMPTS_DIR, server uses its own preset
+  //    (app/prompts/) — the encyclopedia / 百科知识 style.
+  return '';
+}
+
 // ---- main ---------------------------------------------------------------
 async function main() {
   const themes = await loadThemes(args.themes);
-  const port = process.env.PORT ? Number(process.env.PORT) : await findFreePort();
-  BASE_URL = `http://127.0.0.1:${port}`;
   console.log(`appDir=${APP_DIR}`);
-  console.log(`port=${port} orientation=${ORIENTATION} recentDays=${RECENT_DAYS} drillPer=${DRILL_PER} dryRun=${DRY_RUN}`);
-  console.log(`style=${STYLE || '(default)'} promptsDir=${PROMPTS_DIR || '(project default)'}`);
-
-  await startServer(port);
-  await waitServerReady();
+  console.log(`orientation=${ORIENTATION} recentDays=${RECENT_DAYS} drillPer=${DRILL_PER} dryRun=${DRY_RUN}`);
+  console.log(`styleEnv="${STYLE_ENV}" styleList=${JSON.stringify(STYLE_LIST)}`);
 
   const recent = await loadRecentTopics();
   console.log(`Loaded ${recent.length} topic(s) from history within ${RECENT_DAYS} days.`);
 
   const planned = [];
-  for (const theme of themes) {
+  for (const [i, theme] of themes.entries()) {
     const { dup, against } = isDuplicate(theme, recent);
     if (dup) { console.log(`SKIP  "${theme.topic}"  (recent duplicate of "${against}")`); continue; }
-    planned.push(theme);
-    console.log(`BUILD "${theme.topic}"  (+${Math.min(DRILL_PER, theme.drills.length)} drilldowns)`);
+    planned.push({ idx: i, theme });
+    const styleTag = theme.style ? ` [style=${theme.style}]` : ' [style=default 百科]';
+    console.log(`BUILD "${theme.topic}"${styleTag}  (+${Math.min(DRILL_PER, theme.drills.length)} drilldowns)`);
   }
 
   if (DRY_RUN) { console.log('\n[dry-run] nothing created.'); return; }
   if (planned.length === 0) { console.log('\nNothing to build — all themes are recent duplicates.'); return; }
 
+  // Start server with the first theme's style.
+  {
+    const first = planned[0];
+    const pd = pickPromptsDir(first.idx, first.theme);
+    await ensureServer(pd);
+  }
+
   const results = [];
-  for (const theme of planned) {
+  for (const { idx, theme } of planned) {
+    // Ensure server has the correct style for this theme.
+    const pd = pickPromptsDir(idx, theme);
+    await ensureServer(pd);
+
     console.log(`\n=== Creating: ${theme.topic} ===`);
     const created = await api('POST', '/api/canvas', {
       topic: theme.topic,

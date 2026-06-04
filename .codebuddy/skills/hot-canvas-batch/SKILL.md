@@ -46,6 +46,7 @@ description: 当需要把网络热点/流量高的内容批量做成 flipbook-sk
   {
     "topic": "根图主题（一句话，作画册根图标题）",
     "aliases": ["去重关键词1", "去重关键词2"],
+    "style": "按主题挑的风格（见下方风格列表，如 popart/goldluxe/kawaii…）",
     "branches": 5,
     "drills": ["下钻子图1", "下钻子图2", "...", "下钻子图10"]
   }
@@ -55,6 +56,10 @@ description: 当需要把网络热点/流量高的内容批量做成 flipbook-sk
 - `topic`：根节点主题，会触发一张全景信息图。
 - `aliases`：去重用的近义关键词（脚本归一化后做包含匹配）。写全一点，避免下次
   换个说法又重复生成。
+- `style`：**为每个 theme 挑一个最契合的视觉风格**（从下方「风格列表（12 种）」
+  里按"适用主题"列匹配）。这是避免产出趋同的关键——不要清一色 `cinematic`。同一批
+  多个 theme 尽量挑**不同**风格，特色越鲜明越好。`themes.json` 里的 `style` 字段
+  优先级高于命令行 `STYLE=`（见下方优先级）。
 - `drills`：每条是一个**下钻子图的主题 label**。脚本走 `/api/canvas/:id/click/upload`
   的 `label` 覆盖路径——**子图内容由 label 决定，不靠点击坐标语义**（坐标只用来在
   画面上铺开热点锚点，避免引导线重叠）。所以 label 要写成具体、自洽的主题句。
@@ -77,7 +82,7 @@ node ./scripts/build_canvases.mjs --themes /path/to/themes.json
 | `--keep-server` | 关 | 调试用，结束后保留 server 不 kill |
 | `PORT` | 自动挑空闲端口 | 指定则用固定端口 |
 | `ORIENTATION` | `portrait` | 画册方向，竖版/横版 |
-| `STYLE` | 空（项目原始风格） | 设 `douyin` 切换为本 skill 自带的竖版抖音爆款风格（`prompts-douyin/`）；显式 `PROMPTS_DIR` 优先级高于 `STYLE` |
+| `STYLE` | 空 | 全局/轮询风格（如 `popart` 或 `popart,kawaii,pixel`）。**推荐改用 `themes.json` 里每个 theme 的 `style` 字段按主题挑**，优先级高于 `STYLE`；显式 `PROMPTS_DIR` 又高于二者 |
 | `PROMPTS_DIR` | — | 直接指定 prompt 模板目录，覆盖 `STYLE` 的默认选择 |
 | `RECENT_DAYS` | `90` | 去重时间窗（近 N 天同主题跳过） |
 | `DRILL_PER` | `10` | 每册下钻子节点数 |
@@ -92,18 +97,81 @@ node ./scripts/build_canvases.mjs --themes /path/to/themes.json
 
 ## 视觉风格（STYLE 开关）
 
-默认用项目原始风格（米色 isometric 信息图）。要做**抖音图文爆款风格**时加 `STYLE=douyin`：
+默认用项目原始风格（米色 isometric 信息图，即"百科知识"风）——当**既没指定
+`themes.json` 的 `style`、也没传 `STYLE=` / `PROMPTS_DIR=`** 时生效，对应
+`app/prompts/` 目录。通过 `STYLE=` 切换风格包，支持**按主题指定**或**全局轮询**。
 
+### 风格列表（12 种 + 默认）
+
+> **默认风格**（不传任何 STYLE/style/PROMPTS_DIR）：米色 isometric 信息图，
+> 偏中性百科知识感，适合工具/教程/通用科普。下面 12 种是可显式切换的风格包。
+
+> **重要：模型必须按主题为每个 theme 自动挑选最契合的风格**（见阶段一第 4 步），
+> 不要清一色用 `cinematic`。同一批多个 theme 尽量挑不同风格，让产出有辨识度、不趋同。
+
+| STYLE 值 | 风格名 | 视觉特征 | 适用主题 |
+|-----------|--------|----------|----------|
+| `cinematic` | 深海电影感 | 深蓝渐变、生物发光、体积光、暗色电影感 | 科技/揭秘/深度/悬疑 |
+| `vaporwave` | 蒸汽波 | 紫粉青渐变、霓虹网格地平线、罗马石膏像、80s 故障感 | 潮流/音乐/复古未来/二次元 |
+| `claymorphism` | 黏土3D | 软萌 3D 黏土质感、圆润体块、柔和投影、马卡龙撞色 | 生活/教程/产品/萌系 |
+| `risograph` | 套印孔版 | 2-3 色叠印错位、颗粒噪点、荧光粉蓝、复古印刷 | 文艺/活动/海报/手作 |
+| `holographic` | 全息镭射 | 镭射彩虹渐变、液态金属反光、Y2K、未来高级感 | 美妆/数码/潮品/科技 |
+| `papercut` | 剪纸分层 | 多层纸艺立体景深、清晰阴影、鲜明撞色 | 故事/节日/文化/传统 |
+| `popart` | 波普漫画 | 漫画网点、粗黑描边、爆炸框 BAM/WOW、原色高饱和 | 娱乐/八卦/趣味/猎奇 |
+| `kawaii` | 治愈卡通 | 圆润扁平卡通、糖果色、大眼贴纸、可爱吉祥物 | 育儿/萌宠/情感/轻科普 |
+| `goldluxe` | 鎏金奢华 | 黑金配色、烫金质感、大理石纹、聚光灯、高级杂志感 | 财经/奢侈品/高端/汽车 |
+| `airbrush70s` | 复古喷绘 | 70s 喷枪渐变、暖色日落条纹、颗粒、复古海报 | 旅行/音乐/怀旧/慢生活 |
+| `glassmorphism` | 毛玻璃 | 半透磨砂玻璃卡片、彩色光晕背景、模糊层叠、现代 UI 感 | 科技/金融/数据/产品 |
+| `pixel` | 复古像素 | 8-bit 像素网格、限色板、扫描线、街机游戏感 | 游戏/怀旧/80-90s/电竞 |
+
+### 使用方式
+
+**方式一（推荐）：按主题指定风格**——`themes.json` 中每个 theme 带一个 `style` 字段，
+模型选题时就按"适用主题"挑好，**这是避免趋同的关键**：
+```json
+[
+  {
+    "topic": "顶流明星塌房始末",
+    "style": "popart",
+    "aliases": ["塌房", "明星八卦"],
+    "drills": ["事件时间线", "粉丝反应", "..."]
+  },
+  {
+    "topic": "新能源汽车销量榜",
+    "style": "goldluxe",
+    "aliases": ["新能源", "销量榜"],
+    "drills": ["销量第一", "续航对比", "..."]
+  }
+]
+```
+不带 `style` 字段时，回退到命令行 `STYLE=` 或项目默认。
+
+**方式二：全局统一风格**（整批用同一种）
 ```bash
-STYLE=douyin node ./scripts/build_canvases.mjs --themes /path/to/themes.json
+STYLE=glassmorphism node ./scripts/build_canvases.mjs --themes /path/to/themes.json
 ```
 
-`STYLE=douyin` 会把 `PROMPTS_DIR` 默认指向本 skill 自带的 `prompts-douyin/`，整套 prompt 模板换成：
-- **竖版 9:16 电影感海报**：深海/暗色渐变背景、单一震撼 hero 主体、cyan/magenta 辉光、体积光。
-- **大字钩子标题**（4-10 字）+ 6-12 个大号数字 callout，移动端竖屏优先构图。
-- **文案 register 偏爆款**：标题钩子/悬念/数字，正文口语化、含震撼数字、末尾互动钩子。
+**方式三：多风格轮询**（逗号分隔，多个 canvas 时依次轮用）
+```bash
+STYLE=popart,kawaii,pixel node ./scripts/build_canvases.mjs --themes /path/to/themes.json
+```
 
-覆盖关系：显式 `PROMPTS_DIR=xxx` > `STYLE=douyin` > 项目默认。想自定义别的风格，复制 `prompts-douyin/` 改写后用 `PROMPTS_DIR` 指过去即可（风格后缀在 `image-prompt.md`，须是 `>` 引用 + 反引号包裹、逗号开头的那一行）。
+**方式四：完全自定义**——复制任意 `prompts-<style>/` 目录，改写后直接用 `PROMPTS_DIR` 指向：
+```bash
+PROMPTS_DIR=/path/to/my-custom-prompts node ./scripts/build_canvases.mjs --themes ...
+```
+
+### 风格包结构
+
+每个风格对应 `prompts-<style>/` 目录（位于 `skills/hot-canvas-batch/` 下），包含：
+- `system.md` — 全局视觉约束
+- `image-prompt.md` — 风格后缀（引擎用 `>` 引用 + 反引号格式提取）
+- `planner.md` — 文案风格（标题字数/正文语气）
+- `click-label.md`、`decide-search.md` — 通常复用，无需修改
+
+### 优先级
+
+显式 `PROMPTS_DIR=xxx` > `themes.json` 中 `style` 字段 > `STYLE=` 环境变量 > 项目默认（米色 isometric）
 
 ## 去重机制（两道防线）
 两个阶段都基于同一份历史数据 `<app>/topics-history/*/run.json`，归一化口径一致
