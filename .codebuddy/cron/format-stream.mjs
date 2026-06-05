@@ -6,6 +6,29 @@ import { createInterface } from 'node:readline';
 
 const line = (s) => process.stdout.write(`${s}\n`);
 
+// 全局存储 session_id，用于结束时输出
+let currentSessionId = null;
+
+// 输出 session 信息（用于正常结束和用户中断）
+const logSessionEnd = (reason = '结束') => {
+  if (currentSessionId) {
+    line(`■ Session ID: ${currentSessionId} (${reason})`);
+  }
+};
+
+// 捕获用户中断信号，输出 session_id 后退出
+const setupSignalHandlers = () => {
+  const handler = (signal) => {
+    line(`\n⚠ 用户中断 (${signal})`);
+    logSessionEnd('用户中断');
+    process.exit(130); // 130 = 128 + SIGINT(2)
+  };
+  process.on('SIGINT', handler);
+  process.on('SIGTERM', handler);
+};
+
+setupSignalHandlers();
+
 // 截断长文本,日志保持可读
 const clip = (s, n = 800) => {
   s = String(s ?? '').replace(/\s+/g, ' ').trim();
@@ -22,7 +45,10 @@ for await (const raw of rl) {
 
   switch (e.type) {
     case 'system':
-      if (e.subtype === 'init') line(`▶ 会话启动 model=${e.model} session=${e.session_id}`);
+      if (e.subtype === 'init') {
+        currentSessionId = e.session_id;
+        line(`▶ 会话启动 model=${e.model} session=${currentSessionId}`);
+      }
       break;
 
     case 'assistant': {
@@ -55,6 +81,7 @@ for await (const raw of rl) {
     case 'result':
       line(`■ 结束 ${e.is_error ? '失败' : '成功'} turns=${e.num_turns} 用时=${Math.round((e.duration_ms ?? 0) / 1000)}s`);
       if (e.result) line(`最终输出: ${clip(e.result, 2000)}`);
+      logSessionEnd('任务完成');
       break;
 
     default:

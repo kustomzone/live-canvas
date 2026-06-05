@@ -25,8 +25,8 @@ EXPIRE_DATE="2026-12-02"   # 此日期(含)之后不再运行,并自删 crontab 
 MARKER="# cron-job:hot-canvas-to-social"   # 与 install.sh/kill.sh 的 job 名一致,用于过期自删
 
 # 本次定时任务统一用的模型(仅作用于本脚本进程及其所有子进程,不改全局设置)。
-# RUN_MODEL="claude-opus-4.8-1m"
-RUN_MODEL="hy3-preview-ioa"
+RUN_MODEL="claude-opus-4.8-1m"
+# RUN_MODEL="hy3-preview-ioa"
 # flipbook server 生成画册时 spawn 的子 codebuddy 不带 --model,会回退到 CODEBUDDY_MODEL。
 # 导出它 → server(build_canvases.mjs 传 ...process.env)→ 其 codebuddy 子进程全部用它。
 export CODEBUDDY_MODEL="$RUN_MODEL"
